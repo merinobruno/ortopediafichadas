@@ -1,0 +1,23 @@
+node_modules/
+dist/
+data/
+*.log
+.env
+.env.*
+!.env.example
+
+build/
+
+# Local databases, generated reports and design review artifacts
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+tmp/
+.impeccable/review/
+*.zip
+
+# Private credentials and local configuration
+*.pem
+*.key
+.vercel/
