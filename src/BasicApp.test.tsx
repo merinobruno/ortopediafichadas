@@ -13,6 +13,19 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
+it.each(["html", "network"])(
+  "presents a Spanish service error for %s failures",
+  async (failure) => {
+    vi.stubGlobal("fetch", async () => {
+      if (failure === "network") throw new TypeError("Failed to fetch");
+      return new Response("<html>Frontend only</html>");
+    });
+    render(<BasicApp />);
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "El servicio no está disponible. Intentá nuevamente en unos minutos.",
+    );
+  },
+);
 it("shows accessible login when unauthenticated and surfaces failed login", async () => {
   vi.stubGlobal(
     "fetch",
@@ -65,5 +78,46 @@ it("shows only the three approved sections and saves an employee", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Guardar" }));
   await waitFor(() =>
     expect(screen.getByRole("cell", { name: "Ana" })).toBeTruthy(),
+  );
+});
+
+it("holds the current editor and section until a save finishes", async () => {
+  let finishSave!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    finishSave = resolve;
+  });
+  vi.stubGlobal("fetch", async (path: string) => {
+    if (path === "/api/employees") {
+      await pending;
+      return new Response('{"ok":true}');
+    }
+    return new Response(
+      JSON.stringify({
+        email: "admin@example.com",
+        employees: [
+          { _id: "a", name: "Ana", phone: "5491112345678", active: true },
+          { _id: "b", name: "Bruno", phone: "5491187654321", active: true },
+        ],
+        sites: [],
+        attendance: [],
+      }),
+    );
+  });
+  render(<BasicApp />);
+  fireEvent.click(await screen.findByRole("button", { name: "Editar Ana" }));
+  fireEvent.click(screen.getByRole("button", { name: "Guardar" }));
+  fireEvent.click(screen.getByRole("button", { name: "Editar Bruno" }));
+  expect((screen.getByLabelText("Nombre") as HTMLInputElement).value).toBe(
+    "Ana",
+  );
+  fireEvent.click(screen.getByRole("link", { name: "Sedes" }));
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
+    "Empleados",
+  );
+  finishSave();
+  await waitFor(() => expect(screen.queryByLabelText("Nombre")).toBeNull());
+  fireEvent.click(screen.getByRole("button", { name: "Editar Bruno" }));
+  expect((screen.getByLabelText("Nombre") as HTMLInputElement).value).toBe(
+    "Bruno",
   );
 });

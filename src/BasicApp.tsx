@@ -35,14 +35,22 @@ type Data = {
 };
 type Section = "employees" | "sites" | "attendance";
 async function request(path: string, body?: unknown) {
-  const response = await fetch(`/api/${path}`, {
-    method: body === undefined ? "GET" : "POST",
-    headers:
-      body === undefined ? undefined : { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-    credentials: "same-origin",
-  });
-  const result = await response.json();
+  let response: Response;
+  let result;
+  try {
+    response = await fetch(`/api/${path}`, {
+      method: body === undefined ? "GET" : "POST",
+      headers:
+        body === undefined ? undefined : { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      credentials: "same-origin",
+    });
+    result = await response.json();
+  } catch {
+    throw new Error(
+      "El servicio no está disponible. Intentá nuevamente en unos minutos.",
+    );
+  }
   if (!response.ok)
     throw Object.assign(
       new Error(result.error ?? "No se pudo completar la operación."),
@@ -206,8 +214,10 @@ export default function BasicApp() {
                 key={key}
                 href={`#${key}`}
                 aria-current={section === key ? "page" : undefined}
+                aria-disabled={busy || undefined}
                 onClick={(e) => {
                   e.preventDefault();
+                  if (busy) return;
                   setSection(key);
                   setEditing(null);
                   setError("");
@@ -253,6 +263,7 @@ export default function BasicApp() {
           {section !== "attendance" && !editing && (
             <button
               className="basic-primary"
+              disabled={busy}
               onClick={() => {
                 setEditing("new");
                 setError("");
@@ -503,6 +514,7 @@ export default function BasicApp() {
                       <td>
                         <button
                           className="basic-edit"
+                          disabled={busy}
                           aria-label={`Editar ${row.name}`}
                           onClick={() => {
                             setEditing(row);

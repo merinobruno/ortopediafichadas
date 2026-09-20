@@ -23,7 +23,7 @@ Sending is disabled unless WHATSAPP_SEND_ENABLED is explicitly true.
 - Implemented the focused Spanish frontend, secure proxy, private administrator
   bootstrap, authenticated catalogs, immutable attendance, signed webhook and
   durable inbox/outbox. No old HR route is imported into the frontend bundle.
-- Verified locally: 31 basic tests (including real convex-test transactions and
+- Verified locally: 38 basic tests (including real convex-test transactions and
   HTTP actions), 113 existing tests, TypeScript and production Vite build.
 - Production deployment created: blissful-cheetah-426. Development deployment:
   amicable-bat-774 (carahuefichadas project).
@@ -31,6 +31,9 @@ Sending is disabled unless WHATSAPP_SEND_ENABLED is explicitly true.
   production Convex `APP_ORIGIN` and `WHATSAPP_SEND_ENABLED=false` are saved.
 - External setup still pending: authorized deployment credentials, shared proxy
   secret, code publication, private administrator provisioning and Meta setup.
+- Parent subsequently confirmed the production-only `CONVEX_DEPLOY_KEY` is saved
+  in Vercel. Its `deployment:deploy` permission is sufficient for the documented
+  Convex deployment build. No deployment is performed by local verification.
 
 ## Operational handoff
 
@@ -73,8 +76,11 @@ public signup exists.
 2. `npm run test:basic`, `npm run test:legacy`, `npm run build`
 3. With authorized Convex credentials selecting the intended deployment, run
    `npx convex deploy` (production) or `npx convex dev --once` (development).
-4. Deploy the same source branch to the existing Vercel project; build command
-   `npm run build`, output `dist`, Node 24. Its only function is
+4. Deploy the same source branch to the existing Vercel project; repository build
+   command `node scripts/vercel-build.ts`, output `dist`, Node 24. When
+   `VERCEL_ENV=production`, this runs `npx convex deploy --cmd "npm run build"`
+   with the production-only deploy key. Preview/development builds run only
+   `npm run build`, require no production key, and do not deploy Convex. Its only function is
    `api/[...path].ts`, exposing login/logout/data/employees/sites.
 5. Check login, CRUD, session expiry, and signed inbound WhatsApp behavior before
    any production handoff. Meta callback URL is
