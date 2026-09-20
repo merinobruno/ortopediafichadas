@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "types": ["node", "vite/client"] },
+  "include": [
+    "convex",
+    "api",
+    "src/BasicApp.tsx",
+    "src/BasicApp.test.tsx",
+    "tests/basic",
+    "vitest.config.ts"
+  ]
+}
