@@ -23,7 +23,7 @@ Sending is disabled unless WHATSAPP_SEND_ENABLED is explicitly true.
 - Implemented the focused Spanish frontend, secure proxy, private administrator
   bootstrap, authenticated catalogs, immutable attendance, signed webhook and
   durable inbox/outbox. No old HR route is imported into the frontend bundle.
-- Verified locally: 38 basic tests (including real convex-test transactions and
+- Verified locally: 44 basic tests (including real convex-test transactions and
   HTTP actions), 113 existing tests, TypeScript and production Vite build.
 - Production deployment created: blissful-cheetah-426. Development deployment:
   amicable-bat-774 (carahuefichadas project).
@@ -146,3 +146,28 @@ or password reset UI is included in this approved basic scope.
 References: [Convex HTTP actions](https://docs.convex.dev/functions/http-actions),
 [convex-test](https://docs.convex.dev/testing/convex-test),
 [Vercel Node functions](https://vercel.com/docs/functions/runtimes/node-js).
+
+### Site location map (approved follow-up)
+
+The site editor uses Leaflet with OpenStreetMap tiles. Click/tap selects a point;
+dragging its marker adjusts it. The radius input updates the visible circle.
+Existing coordinates retain their exact saved values until explicitly changed.
+The Cipolletti/Neuquén starting view is not a selection: a new site cannot be
+saved until the operator chooses a location. Keyboard users can pan/zoom the
+focused map and choose its center; a collapsed manual coordinate option is also
+available. Saving locks selection and controls. The existing latitude/longitude/
+radius API and database schema are unchanged.
+
+Tiles use `https://tile.openstreetmap.org/{z}/{x}/{y}.png`, visible attribution,
+native browser caching and an explicit `strict-origin-when-cross-origin` tile
+referrer policy. No prefetch, geocoding, paid services, API keys, or device
+location permission is used. A tile failure displays a message and preserves
+the selected/saved coordinates; numeric selection remains available.
+
+For local browser QA, start `npm run dev` and open
+`/tests/fixtures/site-map.html`. This page mounts the real app with in-memory
+fixture data and real OSM tiles; its banner makes the local-only save behavior
+explicit. It is not a Vite production entrypoint and is not emitted into `dist`.
+
+References: [Leaflet](https://leafletjs.com/reference.html),
+[OpenStreetMap tile policy](https://operations.osmfoundation.org/policies/tiles/).

@@ -9,6 +9,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import BasicApp from "./BasicApp";
+import L from "leaflet";
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -119,5 +120,54 @@ it("holds the current editor and section until a save finishes", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Editar Bruno" }));
   expect((screen.getByLabelText("Nombre") as HTMLInputElement).value).toBe(
     "Bruno",
+  );
+});
+
+it("requires a selected site location and submits the map coordinates through the existing API", async () => {
+  Object.defineProperty(L.Browser, "svg", { value: true, configurable: true });
+  const saved: any[] = [];
+  let map!: L.Map;
+  L.Map.addInitHook(function (this: L.Map) {
+    map = this;
+  });
+  vi.stubGlobal("fetch", async (path: string, options?: RequestInit) => {
+    if (path === "/api/sites") {
+      saved.push(JSON.parse(String(options?.body)));
+      return new Response('{"ok":true}');
+    }
+    return new Response(
+      JSON.stringify({
+        email: "admin@example.com",
+        employees: [],
+        sites: [],
+        attendance: [],
+      }),
+    );
+  });
+  render(<BasicApp />);
+  fireEvent.click(await screen.findByRole("link", { name: "Sedes" }));
+  fireEvent.click(screen.getByRole("button", { name: "Nueva sede" }));
+  fireEvent.change(screen.getByLabelText("Nombre"), {
+    target: { value: "Cipolletti" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Guardar" }));
+  expect(saved).toHaveLength(0);
+  expect(screen.getByRole("alert").textContent).toContain("Elegí la ubicación");
+  const { act } = await import("@testing-library/react");
+  act(() => map.fire("click", { latlng: L.latLng(-38.9406, -67.9956) }));
+  fireEvent.change(screen.getByLabelText("Radio permitido (metros)"), {
+    target: { value: "175" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Guardar" }));
+  await waitFor(() =>
+    expect(saved).toEqual([
+      {
+        name: "Cipolletti",
+        active: true,
+        latitude: -38.9406,
+        longitude: -67.9956,
+        radius: 175,
+      },
+    ]),
   );
 });

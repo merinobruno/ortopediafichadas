@@ -4,6 +4,7 @@ export default defineConfig({
     include: [
       "convex/**/*.test.ts",
       "src/BasicApp.test.tsx",
+      "src/SiteLocationPicker.test.tsx",
       "tests/basic/**/*.test.ts",
     ],
     restoreMocks: true,

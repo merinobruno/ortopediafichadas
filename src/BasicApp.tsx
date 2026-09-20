@@ -9,6 +9,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import "./basic.css";
+import SiteLocationPicker from "./SiteLocationPicker";
 type Employee = { _id: string; name: string; phone: string; active: boolean };
 type Site = {
   _id: string;
@@ -140,6 +141,7 @@ export default function BasicApp() {
           <form
             onSubmit={(event) => {
               event.preventDefault();
+              if (busy) return;
               const form = new FormData(event.currentTarget);
               void perform(async () => {
                 await request("login", {
@@ -291,7 +293,17 @@ export default function BasicApp() {
             key={`${section}-${selected?._id ?? "new"}`}
             onSubmit={(event) => {
               event.preventDefault();
+              if (busy) return;
               const form = new FormData(event.currentTarget);
+              if (
+                section === "sites" &&
+                (!form.get("latitude") || !form.get("longitude"))
+              ) {
+                setError(
+                  "Elegí la ubicación de la sede en el mapa antes de guardar.",
+                );
+                return;
+              }
               const value = {
                 ...(selected ? { id: selected._id } : {}),
                 name: String(form.get("name")),
@@ -345,45 +357,18 @@ export default function BasicApp() {
                   </small>
                 </label>
               ) : (
-                <>
-                  <label>
-                    Latitud
-                    <input
-                      name="latitude"
-                      type="number"
-                      step="any"
-                      min={-90}
-                      max={90}
-                      required
-                      defaultValue={(selected as Site | null)?.latitude ?? ""}
-                      placeholder="-34.6037"
-                    />
-                  </label>
-                  <label>
-                    Longitud
-                    <input
-                      name="longitude"
-                      type="number"
-                      step="any"
-                      min={-180}
-                      max={180}
-                      required
-                      defaultValue={(selected as Site | null)?.longitude ?? ""}
-                      placeholder="-58.3816"
-                    />
-                  </label>
-                  <label>
-                    Radio permitido (metros)
-                    <input
-                      name="radius"
-                      type="number"
-                      min={1}
-                      max={10000}
-                      required
-                      defaultValue={(selected as Site | null)?.radius ?? 100}
-                    />
-                  </label>
-                </>
+                <SiteLocationPicker
+                  initialLocation={
+                    selected && "latitude" in selected
+                      ? {
+                          latitude: selected.latitude,
+                          longitude: selected.longitude,
+                        }
+                      : undefined
+                  }
+                  initialRadius={(selected as Site | null)?.radius}
+                  disabled={busy}
+                />
               )}
             </div>
             <label className="basic-check">
