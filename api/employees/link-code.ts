@@ -1,3 +1,1 @@
-import { handleRequest } from "../[...path].js";
-
-export default { fetch: handleRequest };
+export { default } from "../[...path].js";

@@ -37,7 +37,11 @@ it.each([
     });
     vi.stubGlobal("fetch", upstream);
 
-    const response = await route.fetch(
+    const platformFetch = route.fetch as (
+      request: Request,
+      context: { waitUntil: () => void },
+    ) => Promise<Response>;
+    const response = await platformFetch(
       new Request(`https://attendance.example${path}`, {
         method: "POST",
         headers: {
@@ -46,6 +50,7 @@ it.each([
         },
         body: JSON.stringify({ employeeId: "employee-id" }),
       }),
+      { waitUntil: () => {} },
     );
 
     expect(response.status).toBe(200);
