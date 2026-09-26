@@ -1,10 +1,11 @@
+import { DomainRejection } from "./domain-rejection";
 import { enqueueExceptionWork } from "./exception-work";
 import { reportingDay } from "../shared/reporting";
 import { randomUUID } from "node:crypto";
 import { Store } from "./store";
 export type Action = {
   id: string;
-  phone: string;
+  employeeId: string;
   action: string;
   siteId?: string;
   lat: number;
@@ -21,27 +22,32 @@ export const distance = (a: number, b: number, c: number, d: number) => {
 };
 export function applyAction(s: Store, input: Action) {
   if (!Number.isFinite(Date.parse(input.time)))
-    throw new Error("Fecha no válida.");
+    throw new DomainRejection("Fecha no válida.");
   input = { ...input, time: new Date(input.time).toISOString() };
   return s.tx(() => {
     const existing = s.one("SELECT result FROM events WHERE id=?", input.id);
     if (existing) return JSON.parse(existing.result);
     const employee = s.one(
-      "SELECT * FROM employees WHERE phone=? AND active=1",
-      input.phone,
+      "SELECT * FROM employees WHERE id=? AND active=1",
+      input.employeeId,
     );
-    if (!employee) throw new Error("Número no registrado. Contactá a RRHH.");
+    if (!employee)
+      throw new DomainRejection(
+        "Empleado no registrado o inactivo. Contactá a RRHH.",
+      );
     if (!["entry", "exit"].includes(input.action))
-      throw new Error("Indicá si querés registrar entrada o salida.");
+      throw new DomainRejection("Indicá si querés registrar entrada o salida.");
     if (
       !Number.isFinite(input.lat) ||
       !Number.isFinite(input.lon) ||
       Math.abs(input.lat) > 90 ||
       Math.abs(input.lon) > 180
     )
-      throw new Error("La ubicación no es válida. Volvé a compartirla.");
+      throw new DomainRejection(
+        "La ubicación no es válida. Volvé a compartirla.",
+      );
     if (!Number.isFinite(Date.parse(input.time)))
-      throw new Error("Fecha no válida.");
+      throw new DomainRejection("Fecha no válida.");
     const authorized: string[] = JSON.parse(employee.site_ids);
     const matches = s
       .all("SELECT * FROM sites WHERE active=1")
@@ -56,7 +62,7 @@ export function applyAction(s: Store, input: Action) {
         ? matches[0]
         : undefined;
     if (!site)
-      throw new Error(
+      throw new DomainRejection(
         matches.length > 1
           ? "Hay varias sedes en esa ubicación. Seleccioná una sede."
           : "Ubicación fuera de una sede autorizada. Acercate a la sede y compartí tu ubicación.",
@@ -65,8 +71,8 @@ export function applyAction(s: Store, input: Action) {
       "SELECT time FROM events WHERE employee_id=? ORDER BY time DESC LIMIT 1",
       employee.id,
     );
-    if (latest && input.time < latest.time)
-      throw new Error(
+    if (latest && input.time <= latest.time)
+      throw new DomainRejection(
         "Mensaje anterior a la última fichada. RRHH debe revisar el horario.",
       );
     const completed = s.one(
@@ -77,7 +83,7 @@ export function applyAction(s: Store, input: Action) {
       completed?.latest_exit &&
       Date.parse(input.time) < Date.parse(completed.latest_exit)
     )
-      throw new Error(
+      throw new DomainRejection(
         "El mensaje es anterior a una salida confirmada. RRHH debe revisar el horario.",
       );
     const open = s.one(
@@ -85,7 +91,7 @@ export function applyAction(s: Store, input: Action) {
       employee.id,
     );
     if (open && Date.parse(input.time) < Date.parse(open.entry_at))
-      throw new Error(
+      throw new DomainRejection(
         "El mensaje es anterior a la entrada abierta. RRHH debe revisar el horario.",
       );
     if (open) {
@@ -95,14 +101,14 @@ export function applyAction(s: Store, input: Action) {
         open.id,
       );
       if (pause?.time && Date.parse(input.time) < Date.parse(pause.time))
-        throw new Error(
+        throw new DomainRejection(
           "El mensaje es anterior a una pausa registrada. RRHH debe revisar el horario.",
         );
     }
     let visitId: string;
     if (input.action === "entry") {
       if (open?.site_id === site.id)
-        throw new Error(
+        throw new DomainRejection(
           "Ya tenés una entrada abierta en esta sede. Indicá salida para cerrarla.",
         );
       if (open) {
@@ -124,16 +130,22 @@ export function applyAction(s: Store, input: Action) {
         .run(visitId, employee.id, site.id, input.time, input.source);
     } else {
       if (!open)
-        throw new Error("No tenés una entrada abierta. Contactá a RRHH.");
+        throw new DomainRejection(
+          "No tenés una entrada abierta. Contactá a RRHH.",
+        );
       if (open.site_id !== site.id)
-        throw new Error("La salida debe registrarse en la sede de tu entrada.");
+        throw new DomainRejection(
+          "La salida debe registrarse en la sede de tu entrada.",
+        );
       if (
         s.one(
           "SELECT id FROM breaks WHERE visit_id=? AND status='open'",
           open.id,
         )
       )
-        throw new Error("Finalizá la pausa antes de registrar la salida.");
+        throw new DomainRejection(
+          "Finalizá la pausa antes de registrar la salida.",
+        );
       visitId = open.id;
       s.db
         .prepare("UPDATE visits SET status='complete',exit_at=? WHERE id=?")
@@ -178,14 +190,15 @@ export function correctExit(
   reason: string,
   actor: string,
 ) {
-  if (!Number.isFinite(Date.parse(time))) throw new Error("Fecha no válida.");
+  if (!Number.isFinite(Date.parse(time)))
+    throw new DomainRejection("Fecha no válida.");
   time = new Date(time).toISOString();
   return s.tx(() => {
     const before = s.one("SELECT * FROM visits WHERE id=?", id);
     if (!before || before.status !== "exit_unknown")
-      throw new Error("Esta visita no tiene una salida pendiente.");
+      throw new DomainRejection("Esta visita no tiene una salida pendiente.");
     if (reason.trim().length < 5 || !actor)
-      throw new Error("Ingresá un motivo de al menos 5 caracteres.");
+      throw new DomainRejection("Ingresá un motivo de al menos 5 caracteres.");
     const next = s.one(
       "SELECT entry_at FROM visits WHERE employee_id=? AND entry_at>? ORDER BY entry_at LIMIT 1",
       before.employee_id,
@@ -197,7 +210,7 @@ export function correctExit(
       time > new Date().toISOString() ||
       (next && time > next.entry_at)
     )
-      throw new Error(
+      throw new DomainRejection(
         "La salida debe ser posterior a la entrada y anterior a la siguiente visita.",
       );
     if (
@@ -209,7 +222,7 @@ export function correctExit(
             (b.ended_at && Date.parse(time) < Date.parse(b.ended_at)),
         )
     )
-      throw new Error(
+      throw new DomainRejection(
         "La salida no puede ser anterior al inicio o fin confirmado de una pausa.",
       );
     s.db

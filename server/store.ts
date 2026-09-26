@@ -6,16 +6,21 @@ export class Store {
     this.db = new DatabaseSync(path);
     this.db
       .exec(`PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
- CREATE TABLE IF NOT EXISTS employees(id TEXT PRIMARY KEY,name TEXT NOT NULL,phone TEXT NOT NULL UNIQUE,role TEXT NOT NULL DEFAULT 'Empleado',site_ids TEXT NOT NULL DEFAULT '[]',active INTEGER NOT NULL DEFAULT 1);
+ CREATE TABLE IF NOT EXISTS employees(id TEXT PRIMARY KEY,name TEXT NOT NULL,role TEXT NOT NULL DEFAULT 'Empleado',site_ids TEXT NOT NULL DEFAULT '[]',active INTEGER NOT NULL DEFAULT 1);
  CREATE TABLE IF NOT EXISTS sites(id TEXT PRIMARY KEY,name TEXT NOT NULL,address TEXT NOT NULL,lat REAL NOT NULL,lon REAL NOT NULL,radius REAL NOT NULL,category TEXT NOT NULL DEFAULT 'Sucursal',active INTEGER NOT NULL DEFAULT 1);
  CREATE TABLE IF NOT EXISTS visits(id TEXT PRIMARY KEY,employee_id TEXT REFERENCES employees(id),site_id TEXT REFERENCES sites(id),entry_at TEXT NOT NULL,exit_at TEXT,status TEXT NOT NULL,source TEXT NOT NULL);
  CREATE UNIQUE INDEX IF NOT EXISTS one_open_visit ON visits(employee_id) WHERE status='open';
  CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY,employee_id TEXT NOT NULL,time TEXT NOT NULL,result TEXT NOT NULL,source TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS alerts(id TEXT PRIMARY KEY,visit_id TEXT REFERENCES visits(id),employee_id TEXT NOT NULL,type TEXT NOT NULL,created_at TEXT NOT NULL,resolved_at TEXT);
  CREATE TABLE IF NOT EXISTS audit(id TEXT PRIMARY KEY,entity_id TEXT NOT NULL,actor TEXT NOT NULL,reason TEXT NOT NULL,before_json TEXT NOT NULL,after_json TEXT NOT NULL,created_at TEXT NOT NULL);
- CREATE TABLE IF NOT EXISTS pending(phone TEXT PRIMARY KEY,action TEXT NOT NULL,expires_at TEXT NOT NULL);
- CREATE TABLE IF NOT EXISTS inbox(id TEXT PRIMARY KEY,payload TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',error TEXT,created_at TEXT NOT NULL);
- CREATE TABLE IF NOT EXISTS outbox(id TEXT PRIMARY KEY,phone TEXT NOT NULL,text TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'queued',created_at TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS telegram_links(employee_id TEXT PRIMARY KEY REFERENCES employees(id),user_id TEXT NOT NULL UNIQUE,chat_id TEXT NOT NULL UNIQUE,generation TEXT NOT NULL UNIQUE,linked_at TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS telegram_codes(employee_id TEXT PRIMARY KEY REFERENCES employees(id),digest TEXT NOT NULL UNIQUE,expires_at TEXT NOT NULL,issued_by TEXT NOT NULL,issued_at TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS telegram_link_attempts(user_id TEXT PRIMARY KEY,window_start TEXT NOT NULL,count INTEGER NOT NULL);
+ CREATE TABLE IF NOT EXISTS telegram_inbox(update_id INTEGER PRIMARY KEY,message_id INTEGER NOT NULL,user_id TEXT NOT NULL,chat_id TEXT NOT NULL,event_at INTEGER NOT NULL,received_at TEXT NOT NULL,kind TEXT NOT NULL,text TEXT,code_hash TEXT,latitude REAL,longitude REAL,link_generation TEXT,status TEXT NOT NULL DEFAULT 'pending',reason_code TEXT);
+ CREATE TABLE IF NOT EXISTS telegram_sender_state(user_id TEXT PRIMARY KEY,last_event_at INTEGER NOT NULL,last_update_id INTEGER NOT NULL);
+ CREATE INDEX IF NOT EXISTS telegram_inbox_pending ON telegram_inbox(status,user_id,event_at,update_id,message_id);
+ CREATE TABLE IF NOT EXISTS telegram_outbox(id TEXT PRIMARY KEY,update_id INTEGER UNIQUE,employee_id TEXT NOT NULL REFERENCES employees(id),link_generation TEXT NOT NULL,chat_id TEXT NOT NULL,text TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'queued',attempts INTEGER NOT NULL DEFAULT 0,next_attempt_at TEXT,provider_id INTEGER,reason_code TEXT,created_at TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS bot_pending(key TEXT PRIMARY KEY,employee_id TEXT NOT NULL REFERENCES employees(id),action TEXT NOT NULL,expires_at TEXT NOT NULL,location_json TEXT);
  CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY,actor TEXT NOT NULL,expires_at TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,email TEXT UNIQUE NOT NULL,name TEXT NOT NULL,password_hash TEXT NOT NULL,role TEXT NOT NULL,active INTEGER NOT NULL DEFAULT 1,employee_ids TEXT NOT NULL DEFAULT '[]');
  CREATE TABLE IF NOT EXISTS leaves(id TEXT PRIMARY KEY,employee_id TEXT REFERENCES employees(id),type TEXT NOT NULL,date_from TEXT NOT NULL,date_to TEXT NOT NULL,reason TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending');
@@ -52,18 +57,85 @@ export class Store {
       ["events", "input_json", "TEXT NOT NULL DEFAULT '{}'"],
       ["events", "received_at", "TEXT"],
       ["employee_bot_results", "received_at", "TEXT"],
-      ["outbox", "attempts", "INTEGER NOT NULL DEFAULT 0"],
-      ["outbox", "next_attempt_at", "TEXT"],
-      ["outbox", "provider_id", "TEXT"],
-      ["outbox", "error", "TEXT"],
-      ["outbox", "window_until", "TEXT"],
-      ["pending", "location_json", "TEXT"],
       ["sessions", "user_id", "TEXT"],
     ]) {
       if (
         !this.all(`PRAGMA table_info(${table})`).some((c) => c.name === column)
       )
         this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    }
+    this.migratePhoneTransport();
+    this.migrateCommunicationDrafts();
+  }
+  private migrateCommunicationDrafts() {
+    if (
+      this.one(
+        "SELECT 1 FROM migrations WHERE name='telegram_communication_drafts_v1'",
+      )
+    )
+      return;
+    this.tx(() => {
+      for (const row of this.all(
+        "SELECT id,document_json FROM communication_campaigns WHERE status='draft'",
+      )) {
+        const document = JSON.parse(row.document_json);
+        if (JSON.stringify(document).includes("telefono")) {
+          this.db
+            .prepare(
+              "UPDATE communication_campaigns SET status='incompatible' WHERE id=?",
+            )
+            .run(row.id);
+        } else if (document.channel === "whatsapp") {
+          document.channel = "telegram";
+          this.db
+            .prepare(
+              "UPDATE communication_campaigns SET document_json=? WHERE id=?",
+            )
+            .run(JSON.stringify(document), row.id);
+        }
+      }
+      for (const row of this.all(
+        "SELECT t.id,r.document_json FROM communication_templates t JOIN communication_template_revisions r ON r.template_id=t.id AND r.revision=t.revision WHERE t.archived=0",
+      )) {
+        if (row.document_json.includes("telefono"))
+          this.db
+            .prepare("UPDATE communication_templates SET archived=1 WHERE id=?")
+            .run(row.id);
+      }
+      this.db
+        .prepare("INSERT INTO migrations VALUES(?,?)")
+        .run("telegram_communication_drafts_v1", new Date().toISOString());
+    });
+  }
+  private migratePhoneTransport() {
+    if (
+      !this.all("PRAGMA table_info(employees)").some((c) => c.name === "phone")
+    )
+      return;
+    this.db.exec("PRAGMA foreign_keys=OFF");
+    try {
+      this.tx(() => {
+        this.db
+          .exec(`CREATE TABLE employees_new(id TEXT PRIMARY KEY,name TEXT NOT NULL,role TEXT NOT NULL DEFAULT 'Empleado',site_ids TEXT NOT NULL DEFAULT '[]',active INTEGER NOT NULL DEFAULT 1);
+          INSERT INTO employees_new(id,name,role,site_ids,active) SELECT id,name,role,site_ids,active FROM employees;
+          DROP TABLE employees;
+          ALTER TABLE employees_new RENAME TO employees;
+          DROP TABLE IF EXISTS pending;
+          DROP TABLE IF EXISTS inbox;
+          DROP TABLE IF EXISTS outbox;
+          DROP TABLE IF EXISTS recovery_intents;
+          DELETE FROM employee_bot_results WHERE source='whatsapp';
+          DELETE FROM operation_reviews WHERE lane IN ('inbox','outbox');`);
+        if (this.all("PRAGMA foreign_key_check").length)
+          throw new Error(
+            "Telegram migration would break existing employee references",
+          );
+        this.db
+          .prepare("INSERT OR REPLACE INTO migrations VALUES(?,?)")
+          .run("telegram_phone_free_v1", new Date().toISOString());
+      });
+    } finally {
+      this.db.exec("PRAGMA foreign_keys=ON");
     }
   }
   all(sql: string, ...params: any[]): any[] {

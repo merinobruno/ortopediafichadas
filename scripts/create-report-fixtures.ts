@@ -9,7 +9,7 @@ try {
   );
   for (let i = 0; i < 3; i++)
     s.db
-      .prepare("INSERT INTO employees(id,name,phone) VALUES(?,?,?)")
+      .prepare("INSERT INTO employees(id,name,role) VALUES(?,?,?)")
       .run(
         "e" + i,
         [
@@ -17,7 +17,7 @@ try {
           "José Núñez - PERSONA FICTICIA - Logística y administración de sedes",
           "Érica Suárez - PERSONA FICTICIA - Equipo de prueba de reportes",
         ][i],
-        "50000" + i,
+        "Staff",
       );
   for (let i = 0; i < 70; i++) {
     const entry = new Date(

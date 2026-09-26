@@ -14,8 +14,8 @@ const types = z.enum([
   "other",
 ]);
 const variables = z
-  .array(z.enum(["nombre", "telefono", "sedes", "empresa", "fecha"]))
-  .max(5);
+  .array(z.enum(["nombre", "sedes", "empresa", "fecha"]))
+  .max(4);
 const content = {
   type: types,
   subject: z.string().trim().min(1).max(200),
@@ -38,7 +38,7 @@ const campaignSchema = z
     ...content,
     id: z.string().optional(),
     expected_revision: z.number().int().positive().optional(),
-    channel: z.enum(["whatsapp", "email", "both"]),
+    channel: z.enum(["telegram", "email", "both"]),
     template_id: z.string().nullable().optional(),
     template_revision: z.number().int().positive().nullable().optional(),
     selection: z
@@ -222,6 +222,10 @@ function sites(s: Store, e: any) {
 export function previewCampaign(s: Store, id: string) {
   const c = s.one("SELECT * FROM communication_campaigns WHERE id=?", id);
   if (!c) throw new Error("Borrador no encontrado.");
+  if (c.status === "incompatible")
+    throw new Error(
+      "Este borrador usa datos de teléfono anteriores. Creá uno nuevo para Telegram.",
+    );
   const p = JSON.parse(c.document_json),
     selection = p.selection;
   let employees = s.all("SELECT * FROM employees ORDER BY name,id");
@@ -255,7 +259,6 @@ export function previewCampaign(s: Store, id: string) {
   const recipients = employees.map((e) => {
     const values: Record<string, string> = {
       nombre: e.name,
-      telefono: e.phone,
       sedes: sites(s, e).join(", ") || "Sin sedes autorizadas",
       empresa: "Carahue",
       fecha: day,
@@ -267,7 +270,6 @@ export function previewCampaign(s: Store, id: string) {
     return {
       employee_id: e.id,
       name: e.name,
-      phone: e.phone,
       subject,
       body,
       body_escaped: escapeText(body),
@@ -335,15 +337,7 @@ export function prepareCampaign(
     return { id: preparation, revision: c.revision };
   });
 }
-export function onboardingPreview(
-  s: Store,
-  employeeId: string,
-  number = process.env.BOT_PUBLIC_NUMBER || "",
-) {
-  if (number && !/^\d{10,15}$/.test(number))
-    throw new Error(
-      "El número público del bot no está configurado correctamente.",
-    );
+export function onboardingPreview(s: Store, employeeId: string) {
   const e = s.one(
     "SELECT * FROM employees WHERE id=? AND active=1",
     employeeId,
@@ -352,10 +346,9 @@ export function onboardingPreview(
   const authorized = sites(s, e);
   return {
     employee_id: e.id,
-    bot_number: number || null,
     dispatch_available: false,
     identity_verified: false,
-    text: `Hola ${e.name}. ${number ? "Guardá el número +" + number + " como contacto para fichar." : "RRHH debe confirmar el número público del bot antes de compartir estas instrucciones."}\nAl entrar escribí entrada y enviá tu ubicación actual con Compartir ubicación de WhatsApp. Al salir escribí salida y volvé a compartir tu ubicación.\nSedes autorizadas: ${authorized.join(", ") || "ninguna; contactá a RRHH"}.\nPodés registrar varias visitas en distintas sedes y volver a una sede durante el día. Si entrás en otra sede sin cerrar la anterior, se registra la nueva entrada y RRHH recibe una alerta de salida desconocida.\n${BOT_HELP}\nEstas instrucciones no verifican identidad ni registran aceptación de términos o firma.`,
+    text: `Hola ${e.name}. RRHH te dará un código de un solo uso para vincularte en el chat privado del bot de Telegram. Enviá /start seguido del código dentro de los 15 minutos.\nAl entrar escribí entrada y compartí tu ubicación actual en Telegram. Al salir escribí salida y volvé a compartir tu ubicación.\nSedes autorizadas: ${authorized.join(", ") || "ninguna; contactá a RRHH"}.\nPodés registrar varias visitas en distintas sedes y volver a una sede durante el día. Si entrás en otra sede sin cerrar la anterior, se registra la nueva entrada y RRHH recibe una alerta de salida desconocida.\n${BOT_HELP}\nEstas instrucciones no verifican identidad ni registran aceptación de términos o firma.`,
   };
 }
 export function communicationRoutes(app: Express, s: Store) {

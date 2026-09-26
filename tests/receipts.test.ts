@@ -17,7 +17,7 @@ const pdf = readFileSync(
 function setup() {
   const s = new Store(":memory:");
   s.db.exec(
-    "INSERT INTO employees(id,name,phone) VALUES('e','Synthetic','5491100000011'),('other','Other synthetic','5491100000012')",
+    "INSERT INTO employees(id,name,role) VALUES('e','Synthetic','5491100000011'),('other','Other synthetic','5491100000012')",
   );
   return s;
 }
@@ -71,7 +71,7 @@ test("receipt staging preserves bytes privately and assignment/archive metadata 
       assignDocument(s, d.id, "e", "No change allowed", "hr"),
     );
     await assert.rejects(() => addDocument(s, b.id, pdf, "same.pdf", "hr"));
-    assert.equal(s.one("SELECT COUNT(*) n FROM outbox").n, 0);
+    assert.equal(s.one("SELECT COUNT(*) n FROM telegram_outbox").n, 0);
   } finally {
     s.db.close();
   }

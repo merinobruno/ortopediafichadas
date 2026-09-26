@@ -1,4 +1,7 @@
-import { operationRoutes } from "./whatsapp-operations";
+import { operationRoutes } from "./telegram-operations";
+import { issueLinkCode, revokeLink } from "./telegram-links";
+import { parseTelegramUpdate } from "./telegram-update";
+import { receiveTelegramUpdate, processTelegramInbox } from "./telegram";
 import { planningRoutes } from "./weekly-planning";
 import {
   catalogRoutes,
@@ -19,12 +22,7 @@ import { reportRoutes } from "./reports";
 import { installAuth, scopedEmployees } from "./auth";
 import express from "express";
 import cookieParser from "cookie-parser";
-import {
-  randomUUID,
-  createHmac,
-  timingSafeEqual,
-  randomBytes,
-} from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { Store } from "./store";
 import { applyAction, correctExit } from "./domain";
@@ -44,12 +42,11 @@ const siteSchema = z.object({
 });
 const personSchema = z.object({
   name: z.string().trim().min(2),
-  phone: z.string().regex(/^\d{10,15}$/),
   role: z.string().min(2),
   site_ids: z.array(z.string()).min(1),
   active: z.coerce.number().min(0).max(1).default(1),
 });
-export { processInbox } from "./whatsapp";
+export { processTelegramInbox as processInbox } from "./telegram";
 export function createApp(s: Store) {
   const app = express();
   app.enable("case sensitive routing");
@@ -72,93 +69,28 @@ export function createApp(s: Store) {
     res.setHeader("Referrer-Policy", "same-origin");
     next();
   });
-  app.get("/webhook/whatsapp", (req, res) => {
-    if (
-      process.env.WHATSAPP_VERIFY_TOKEN &&
-      req.query["hub.mode"] === "subscribe" &&
-      req.query["hub.verify_token"] === process.env.WHATSAPP_VERIFY_TOKEN
-    )
-      res.send(req.query["hub.challenge"]);
-    else res.sendStatus(403);
-  });
   app.post(
-    "/webhook/whatsapp",
+    "/webhook/telegram",
+    (req, res, next) => {
+      const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
+      if (!secret) return res.sendStatus(503);
+      const supplied = req.get("X-Telegram-Bot-Api-Secret-Token") || "";
+      if (
+        Buffer.byteLength(supplied) !== Buffer.byteLength(secret) ||
+        !timingSafeEqual(Buffer.from(supplied), Buffer.from(secret))
+      )
+        return res.sendStatus(401);
+      next();
+    },
     express.raw({ type: "application/json", limit: "1mb" }),
     (req, res) => {
-      const secret = process.env.WHATSAPP_APP_SECRET;
-      if (!secret) {
-        res.status(503).json({ error: "Webhook sin configurar" });
-        return;
-      }
-      const actual = req.get("x-hub-signature-256") || "";
-      if (!Buffer.isBuffer(req.body)) {
-        res.sendStatus(415);
-        return;
-      }
-      const expected =
-        "sha256=" + createHmac("sha256", secret).update(req.body).digest("hex");
-      if (
-        Buffer.byteLength(actual) !== Buffer.byteLength(expected) ||
-        !timingSafeEqual(Buffer.from(actual), Buffer.from(expected))
-      ) {
-        res.sendStatus(401);
-        return;
-      }
+      if (!Buffer.isBuffer(req.body)) return res.sendStatus(415);
       try {
-        const payload = JSON.parse(req.body.toString());
-        s.tx(() => {
-          for (const e of payload.entry || [])
-            for (const c of e.changes || []) {
-              const businessId = c.value?.metadata?.phone_number_id;
-              if (
-                process.env.WHATSAPP_PHONE_NUMBER_ID &&
-                businessId !== process.env.WHATSAPP_PHONE_NUMBER_ID
-              )
-                continue;
-              for (const status of c.value?.statuses || []) {
-                if (
-                  ["sent", "delivered", "read", "failed"].includes(
-                    status.status,
-                  )
-                )
-                  s.db
-                    .prepare(
-                      "UPDATE outbox SET status=? WHERE provider_id=? AND status NOT IN ('read','delivered')",
-                    )
-                    .run(status.status, status.id);
-              }
-              for (const m of c.value?.messages || []) {
-                if (
-                  typeof m.id !== "string" ||
-                  typeof m.from !== "string" ||
-                  !/^\d{10,15}$/.test(m.from) ||
-                  !Number.isFinite(Number(m.timestamp)) ||
-                  !Number.isFinite(
-                    new Date(Number(m.timestamp) * 1000).getTime(),
-                  )
-                )
-                  throw new Error("Malformed message");
-                const key = (businessId ? businessId + ":" : "") + m.id;
-                s.db
-                  .prepare(
-                    "INSERT OR IGNORE INTO inbox VALUES(?,?,'pending',NULL,?)",
-                  )
-                  .run(
-                    key,
-                    JSON.stringify({
-                      ...m,
-                      provider_message_id: m.id,
-                      business_id: businessId,
-                      id: key,
-                    }),
-                    new Date().toISOString(),
-                  );
-              }
-            }
-        });
-        res.sendStatus(200);
+        const event = parseTelegramUpdate(JSON.parse(req.body.toString()));
+        if (event) receiveTelegramUpdate(s, event);
+        return res.sendStatus(200);
       } catch {
-        res.sendStatus(400);
+        return res.sendStatus(400);
       }
     },
   );
@@ -191,9 +123,14 @@ export function createApp(s: Store) {
   });
   app.get("/api/state", (_req, res) =>
     res.json({
-      employees: s
-        .all("SELECT * FROM employees ORDER BY name")
-        .map((e) => ({ ...e, site_ids: JSON.parse(e.site_ids) })),
+      employees: s.all("SELECT * FROM employees ORDER BY name").map((e) => ({
+        ...e,
+        site_ids: JSON.parse(e.site_ids),
+        telegram_linked: !!s.one(
+          "SELECT 1 FROM telegram_links WHERE employee_id=?",
+          e.id,
+        ),
+      })),
       sites: publicSites(s),
       categories: listCatalog(s, "category"),
       visits: s.all("SELECT * FROM visits ORDER BY entry_at DESC"),
@@ -204,14 +141,14 @@ export function createApp(s: Store) {
       breaks: s.all("SELECT * FROM breaks"),
       integration: {
         mode: "local",
-        configured: !!process.env.WHATSAPP_APP_SECRET,
-        sending: process.env.WHATSAPP_SEND_ENABLED === "true",
+        configured: !!process.env.TELEGRAM_WEBHOOK_SECRET,
+        sending: process.env.TELEGRAM_SEND_ENABLED === "true",
         demo,
         inbox: s.all(
-          "SELECT id,status,error,created_at FROM inbox ORDER BY created_at DESC LIMIT 30",
+          "SELECT update_id,status,reason_code,received_at FROM telegram_inbox ORDER BY received_at DESC LIMIT 30",
         ),
         outbox: s.all(
-          "SELECT id,text,status,created_at,error,attempts FROM outbox ORDER BY created_at DESC LIMIT 30",
+          "SELECT id,status,reason_code,created_at,attempts FROM telegram_outbox ORDER BY created_at DESC LIMIT 30",
         ),
       },
     }),
@@ -231,9 +168,10 @@ export function createApp(s: Store) {
       const before = s.one("SELECT active FROM employees WHERE id=?", id);
       s.db
         .prepare(
-          "INSERT INTO employees VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,phone=excluded.phone,role=excluded.role,site_ids=excluded.site_ids,active=excluded.active",
+          "INSERT INTO employees(id,name,role,site_ids,active) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,role=excluded.role,site_ids=excluded.site_ids,active=excluded.active",
         )
-        .run(id, p.name, p.phone, p.role, JSON.stringify(p.site_ids), p.active);
+        .run(id, p.name, p.role, JSON.stringify(p.site_ids), p.active);
+      if (!p.active && before?.active) revokeLink(s, id, res.locals.actor);
       const today = reportingDay(new Date().toISOString());
       enqueueExceptionWork(s, id, today, today);
       if (before && before.active !== p.active) {
@@ -256,6 +194,19 @@ export function createApp(s: Store) {
       }
     });
     res.json({ id });
+  });
+  app.post("/api/employees/:id/telegram-code", (req, res) => {
+    if (!["admin", "hr"].includes(res.locals.user.role))
+      return res.sendStatus(403);
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.json(issueLinkCode(s, String(req.params.id), res.locals.actor));
+  });
+  app.post("/api/employees/:id/telegram-revoke", (req, res) => {
+    if (!["admin", "hr"].includes(res.locals.user.role))
+      return res.sendStatus(403);
+    res.setHeader("Cache-Control", "private, no-store");
+    revokeLink(s, String(req.params.id), res.locals.actor);
+    return res.json({ ok: true });
   });
   app.post("/api/sites", (req, res) => {
     if (Object.hasOwn(req.body, "category"))
@@ -307,17 +258,17 @@ export function createApp(s: Store) {
   app.post("/api/simulate/text", (req, res) => {
     const p = z
       .object({
-        phone: z.string().regex(/^\d{10,15}$/),
+        employeeId: z.string().min(1),
         text: z.string().trim().min(1).max(4000),
       })
       .strict()
       .parse(req.body);
-    res.json(simulateEmployeeText(s, p.phone, p.text, res.locals.actor));
+    res.json(simulateEmployeeText(s, p.employeeId, p.text, res.locals.actor));
   });
   app.post("/api/simulate/location", (req, res) => {
     const p = z
       .object({
-        phone: z.string().regex(/^\d{10,15}$/),
+        employeeId: z.string().min(1),
         latitude: z.number().min(-90).max(90),
         longitude: z.number().min(-180).max(180),
       })
@@ -326,11 +277,8 @@ export function createApp(s: Store) {
     res.json(
       simulateEmployeeMessage(
         s,
-        p.phone,
-        {
-          type: "location",
-          location: { latitude: p.latitude, longitude: p.longitude },
-        },
+        p.employeeId,
+        { kind: "location", latitude: p.latitude, longitude: p.longitude },
         res.locals.actor,
       ),
     );
@@ -423,7 +371,7 @@ export function createApp(s: Store) {
           err instanceof z.ZodError
             ? "Revisá los campos del formulario."
             : String(err.message).includes("UNIQUE")
-              ? "Ya existe un empleado con ese teléfono."
+              ? "Ya existe un registro con esos datos."
               : err.message || "No se pudo guardar. Intentá nuevamente.",
       });
     },

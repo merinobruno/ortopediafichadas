@@ -9,9 +9,7 @@ import {
 function setup() {
   const s = new Store(":memory:");
   s.db
-    .prepare(
-      "INSERT INTO employees VALUES('e','Employee','5491100000011','Staff','[]',1)",
-    )
+    .prepare("INSERT INTO employees VALUES('e','Employee','Staff','[]',1)")
     .run();
   s.db
     .prepare(

@@ -24,7 +24,7 @@ const time = (v: string) =>
         hourCycle: "h23",
       })
     : "No registrado";
-export default function WhatsAppOperations({
+export default function TelegramOperations({
   onLockChange,
 }: {
   onLockChange: (locked: boolean) => void;
@@ -50,7 +50,7 @@ export default function WhatsAppOperations({
     if (status) q.set("status", status);
     if (review) q.set("review", review);
     if (cursor) q.set("cursor", cursor);
-    fetch("/api/whatsapp-operations?" + q, { signal: controller.signal })
+    fetch("/api/telegram-operations?" + q, { signal: controller.signal })
       .then(async (r) => {
         const b = await r.json();
         if (!r.ok) throw new Error(b.error);
@@ -73,7 +73,7 @@ export default function WhatsAppOperations({
     setBusy(true);
     setError("");
     try {
-      const r = await fetch("/api/whatsapp-operations/review", {
+      const r = await fetch("/api/telegram-operations/review", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -112,7 +112,7 @@ export default function WhatsAppOperations({
   return (
     <div className="wa-operations">
       <section className="panel">
-        <h2>Operación WhatsApp</h2>
+        <h2>Operación Telegram</h2>
         <p>
           Revisar o apartar un registro sólo agrega una anotación. No reenvía
           mensajes, modifica fichadas ni libera cuarentenas. Un resultado

@@ -14,6 +14,12 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { Store } from "../server/store";
 import {
+  issueLinkCode,
+  consumeLinkCode,
+  hashLinkCode,
+} from "../server/telegram-links";
+import { receiveTelegramUpdate } from "../server/telegram";
+import {
   snapshotDatabase,
   restoreDatabase,
   verifyDatabase,
@@ -32,26 +38,39 @@ test("consistent WAL snapshot restores to new path with sessions revoked and rep
       )
       .run();
     s.db
-      .prepare("INSERT INTO inbox VALUES('m','{}','pending',NULL,'2026-09-01')")
-      .run();
-    s.db
-      .prepare(
-        "INSERT INTO outbox(id,phone,text,status,created_at) VALUES('m','123','private reply','queued','2026-09-01')",
-      )
-      .run();
-    s.db
-      .prepare(
-        "INSERT INTO pending(phone,action,expires_at) VALUES('123','entry','2099-01-01')",
-      )
-      .run();
-    s.db
       .prepare(
         "INSERT INTO audit VALUES('a','entity','hr','reason','null','{}','2026-09-01')",
       )
       .run();
     s.db.exec(
-      "INSERT INTO employees(id,name,phone) VALUES('e','Synthetic employee','123'); INSERT INTO sites(id,name,address,lat,lon,radius) VALUES('s','Synthetic site','Address',0,0,100); INSERT INTO visits VALUES('v','e','s','2026-09-01T09:00:00Z','2026-09-01T10:00:00Z','complete','simulator');",
+      "INSERT INTO employees(id,name) VALUES('e','Synthetic employee'); INSERT INTO sites(id,name,address,lat,lon,radius) VALUES('s','Synthetic site','Address',0,0,100); INSERT INTO visits VALUES('v','e','s','2026-09-01T09:00:00Z','2026-09-01T10:00:00Z','complete','simulator');",
     );
+    const oldCode = issueLinkCode(s, "e", "hr");
+    consumeLinkCode(s, hashLinkCode(oldCode.code), "8", "8");
+    const unusedCodeEmployee = "unused";
+    s.db
+      .prepare("INSERT INTO employees(id,name) VALUES(?,?)")
+      .run(unusedCodeEmployee, "Unused");
+    issueLinkCode(s, unusedCodeEmployee, "hr");
+    receiveTelegramUpdate(s, {
+      updateId: 1,
+      messageId: 1,
+      userId: "8",
+      chatId: "8",
+      timestamp: Date.now(),
+      kind: "text",
+      text: "entrada",
+    });
+    s.db
+      .prepare(
+        "INSERT INTO telegram_outbox(id,employee_id,link_generation,chat_id,text,status,created_at) SELECT 'reply',employee_id,generation,chat_id,'private reply','queued',? FROM telegram_links WHERE employee_id='e'",
+      )
+      .run(new Date().toISOString());
+    s.db
+      .prepare(
+        "INSERT INTO bot_pending(key,employee_id,action,expires_at) VALUES('telegram:e','e','entry','2099-01-01')",
+      )
+      .run();
     const bytes = readFileSync(
       new URL("./fixtures/recibo-ficticio-qa.pdf", import.meta.url),
     );
@@ -73,17 +92,17 @@ test("consistent WAL snapshot restores to new path with sessions revoked and rep
     try {
       assert.equal(r.prepare("SELECT COUNT(*) n FROM sessions").get()!.n, 0);
       assert.equal(
-        r.prepare("SELECT status FROM inbox").get()!.status,
+        r.prepare("SELECT status FROM telegram_inbox").get()!.status,
         "recovery_hold",
       );
       assert.equal(
-        r.prepare("SELECT status FROM outbox").get()!.status,
+        r.prepare("SELECT status FROM telegram_outbox").get()!.status,
         "recovery_hold",
       );
-      assert.equal(r.prepare("SELECT COUNT(*) n FROM pending").get()!.n, 0);
+      assert.equal(r.prepare("SELECT COUNT(*) n FROM bot_pending").get()!.n, 0);
       assert.equal(
-        r.prepare("SELECT COUNT(*) n FROM recovery_intents").get()!.n,
-        1,
+        r.prepare("SELECT COUNT(*) n FROM telegram_codes").get()!.n,
+        0,
       );
       assert.equal(
         r.prepare("SELECT COUNT(*) n FROM audit").get()!.n,
@@ -112,7 +131,8 @@ test("consistent WAL snapshot restores to new path with sessions revoked and rep
       r.close();
     }
     acknowledgeRecovery(restored);
-    assert.equal(s.one("SELECT status FROM inbox").status, "pending");
+    assert.equal(s.one("SELECT status FROM telegram_inbox").status, "pending");
+    assert.equal(s.one("SELECT COUNT(*) n FROM telegram_codes").n, 1);
     assert.equal(s.one("SELECT COUNT(*) n FROM sessions").n, 1);
     await assert.rejects(() => snapshotDatabase(source, backup));
     const alias = join(dir, "alias.sqlite");

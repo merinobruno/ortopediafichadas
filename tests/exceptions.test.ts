@@ -10,7 +10,7 @@ import { enqueueExceptionWork } from "../server/exception-work";
 function setup() {
   const s = new Store(":memory:");
   s.db.exec(
-    "INSERT INTO employees(id,name,phone) VALUES('e','Employee','123'); INSERT INTO sites(id,name,address,lat,lon,radius) VALUES('s','Site','Address',0,0,100)",
+    "INSERT INTO employees(id,name,role) VALUES('e','Employee','123'); INSERT INTO sites(id,name,address,lat,lon,radius) VALUES('s','Site','Address',0,0,100)",
   );
   const slots = Array(7).fill({
     name: "Morning",
@@ -105,7 +105,7 @@ test("catchup advances beyond 93 days and per-day batches cap 100 employees with
   );
   for (let i = 0; i < 105; i++)
     s.db
-      .prepare("INSERT INTO employees(id,name,phone) VALUES(?,?,?)")
+      .prepare("INSERT INTO employees(id,name,role) VALUES(?,?,?)")
       .run("z" + i, "Synthetic", String(1000 + i));
   enqueueExceptionWork(s, null, "2026-09-15", "2026-09-15");
   processExceptions(s, now, false);
@@ -270,7 +270,7 @@ test("supervisor list counts pagination and audit are scoped and rule/ack mutati
   process.env.ADMIN_PASSWORD = "Exceptions-admin-123";
   const s = setup();
   s.db.exec(
-    "INSERT INTO employees(id,name,phone) VALUES('private','Private Person','999'); INSERT INTO schedules SELECT 'privateplan','private',date_from,date_to,anchor,cycle,slots_json,status FROM schedules LIMIT 1",
+    "INSERT INTO employees(id,name,role) VALUES('private','Private Person','999'); INSERT INTO schedules SELECT 'privateplan','private',date_from,date_to,anchor,cycle,slots_json,status FROM schedules LIMIT 1",
   );
   configureRule(s, "absent", { enabled: true, priority: "normal" }, "hr", now);
   drain(s);
@@ -347,7 +347,7 @@ test("employee cursor survives database reopen and completes remaining rows", ()
   try {
     for (let i = 0; i < 105; i++)
       s.db
-        .prepare("INSERT INTO employees(id,name,phone) VALUES(?,?,?)")
+        .prepare("INSERT INTO employees(id,name,role) VALUES(?,?,?)")
         .run(String(i).padStart(3, "0"), "Synthetic", String(i + 1000));
     configureRule(
       s,
@@ -409,14 +409,13 @@ test("employee endpoint deactivation and reactivation recheck historical identit
       }),
     });
     const cookie = login.headers.get("set-cookie")!;
-    const mutate = (active: number, phone = "5491100000011") =>
+    const mutate = (active: number) =>
       fetch(url + "/api/employees", {
         method: "POST",
         headers: { cookie, "Content-Type": "application/json" },
         body: JSON.stringify({
           id: "e",
           name: "Employee",
-          phone,
           role: "Staff",
           site_ids: ["s"],
           active,

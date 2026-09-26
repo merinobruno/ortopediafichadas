@@ -3,11 +3,11 @@ import { upsertUser } from "../server/auth";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Store } from "../server/store";
-import { listOperations, reviewOperation } from "../server/whatsapp-operations";
+import { listOperations, reviewOperation } from "../server/telegram-operations";
 function setup() {
   const s = new Store(":memory:");
   s.db.exec(
-    "INSERT INTO inbox VALUES('in','SECRET RAW LOCATION','rejected','PRIVATE ERROR','2026-09-01T00:00:00Z');INSERT INTO outbox(id,phone,text,status,created_at,error) VALUES('out','123','PRIVATE MESSAGE','recovery_hold','2026-09-01T00:00:00Z','SECRET TOKEN')",
+    "INSERT INTO employees(id,name) VALUES('e','Ana');INSERT INTO telegram_inbox(update_id,message_id,user_id,chat_id,event_at,received_at,kind,text,status,reason_code) VALUES(1,1,'8','8',1788220800000,'2026-09-01T00:00:00Z','text','SECRET RAW LOCATION','rejected','PRIVATE ERROR');INSERT INTO telegram_outbox(id,employee_id,link_generation,chat_id,text,status,created_at,reason_code) VALUES('out','e','generation','8','PRIVATE MESSAGE','recovery_hold','2026-09-01T00:00:00Z','SECRET TOKEN')",
   );
   return s;
 }
@@ -48,7 +48,7 @@ test("operator metadata is role restricted and redacted with recovery hold visib
     try {
       const base = "http://127.0.0.1:" + (server.address() as any).port;
       assert.equal(
-        (await fetch(base + "/api/whatsapp-operations?lane=inbox")).status,
+        (await fetch(base + "/api/telegram-operations?lane=inbox")).status,
         401,
       );
       const login = await fetch(base + "/api/login", {
@@ -62,7 +62,7 @@ test("operator metadata is role restricted and redacted with recovery hold visib
       const cookie = login.headers.get("set-cookie")!;
       assert.equal(
         (
-          await fetch(base + "/api/whatsapp-operations?lane=inbox", {
+          await fetch(base + "/api/telegram-operations?lane=inbox", {
             headers: { cookie },
           })
         ).status,
@@ -70,7 +70,7 @@ test("operator metadata is role restricted and redacted with recovery hold visib
       );
       assert.equal(
         (
-          await fetch(base + "/api/whatsapp-operations/review", {
+          await fetch(base + "/api/telegram-operations/review", {
             method: "POST",
             headers: { cookie, "Content-Type": "application/json" },
             body: JSON.stringify({}),
@@ -88,7 +88,7 @@ test("operator metadata is role restricted and redacted with recovery hold visib
 test("review revisions audit atomically without any transport or intent mutation", () => {
   const s = setup();
   try {
-    const before = s.all("SELECT * FROM outbox");
+    const before = s.all("SELECT * FROM telegram_outbox");
     const input = {
       lane: "outbox",
       id: "out",
@@ -97,7 +97,7 @@ test("review revisions audit atomically without any transport or intent mutation
       reason: "Checked offline",
     };
     reviewOperation(s, { role: "hr", email: "hr@example.test" }, input);
-    assert.deepEqual(s.all("SELECT * FROM outbox"), before);
+    assert.deepEqual(s.all("SELECT * FROM telegram_outbox"), before);
     assert.equal(
       s.one("SELECT actor FROM operation_reviews").actor,
       "hr@example.test",
@@ -117,8 +117,8 @@ test("review revisions audit atomically without any transport or intent mutation
       ),
     );
     assert.equal(s.one("SELECT COUNT(*) n FROM operation_reviews").n, 1);
-    assert.deepEqual(s.all("SELECT * FROM outbox"), before);
-    assert.equal(s.one("SELECT COUNT(*) n FROM pending").n, 0);
+    assert.deepEqual(s.all("SELECT * FROM telegram_outbox"), before);
+    assert.equal(s.one("SELECT COUNT(*) n FROM bot_pending").n, 0);
   } finally {
     s.db.close();
   }
@@ -128,12 +128,10 @@ test("operator cursor pages and review filters do not skip or duplicate records"
   try {
     for (let i = 0; i < 30; i++)
       s.db
-        .prepare("INSERT INTO inbox VALUES(?,?,'pending',NULL,?)")
-        .run(
-          "row" + String(i).padStart(2, "0"),
-          "secret",
-          "2026-09-02T00:00:00Z",
-        );
+        .prepare(
+          "INSERT INTO telegram_inbox(update_id,message_id,user_id,chat_id,event_at,received_at,kind,text,status) VALUES(?,1,'8','8',1788307200000,?,'text','secret','pending')",
+        )
+        .run(i + 2, "2026-09-02T00:00:00Z");
     const a = listOperations(s, { role: "admin" }, { lane: "inbox" }),
       b = listOperations(
         s,

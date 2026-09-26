@@ -12,7 +12,8 @@ const origin: Row = {
   manual_hr: "Carga manual RRHH",
   simulator: "Simulador",
   demo: "Demo",
-  whatsapp: "WhatsApp",
+  telegram: "Telegram",
+  whatsapp: "WhatsApp (histórico)",
 };
 const when = (value: string) =>
   value

@@ -11,7 +11,7 @@ test("private receipt HTTP authenticates before parsing and protects bytes and a
   process.env.ADMIN_PASSWORD = "Receipt-api-test-2026";
   const s = new Store(":memory:");
   s.db.exec(
-    "INSERT INTO employees(id,name,phone) VALUES('e','Synthetic','5491100000011')",
+    "INSERT INTO employees(id,name,role) VALUES('e','Synthetic','5491100000011')",
   );
   const app = createApp(s);
   upsertUser(
@@ -138,7 +138,7 @@ test("private receipt HTTP authenticates before parsing and protects bytes and a
       ).status,
       409,
     );
-    assert.equal(s.one("SELECT COUNT(*) n FROM outbox").n, 0);
+    assert.equal(s.one("SELECT COUNT(*) n FROM telegram_outbox").n, 0);
   } finally {
     await new Promise<void>((r) => server.close(() => r()));
     s.db.close();

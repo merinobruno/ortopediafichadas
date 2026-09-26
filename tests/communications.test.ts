@@ -22,13 +22,13 @@ const template = {
 function setup() {
   const s = new Store(":memory:");
   s.db.exec(
-    `INSERT INTO sites(id,name,address,lat,lon,radius) VALUES('s','Central','Address',0,0,100);INSERT INTO employees VALUES('e','Ana','5491100000011','Staff','["s"]',1),('off','Inactive','5491100000012','Staff','["s"]',0);INSERT INTO taxonomy VALUES('sector','sector','Team');INSERT INTO employee_tags VALUES('e','sector'),('off','sector');`,
+    `INSERT INTO sites(id,name,address,lat,lon,radius) VALUES('s','Central','Address',0,0,100);INSERT INTO employees VALUES('e','Ana','Staff','["s"]',1),('off','Inactive','Staff','["s"]',0);INSERT INTO taxonomy VALUES('sector','sector','Team');INSERT INTO employee_tags VALUES('e','sector'),('off','sector');`,
   );
   return s;
 }
 const draft = {
   type: "circular",
-  channel: "whatsapp",
+  channel: "telegram",
   requires_signature: false,
   subject: "Hola {{nombre}}",
   body: "<b>{{nombre}}</b>",
@@ -64,10 +64,10 @@ test("immutable local template revisions validate variables and archive with aud
     s.one("SELECT archived FROM communication_templates").archived,
     1,
   );
-  assert.equal(s.one("SELECT COUNT(*) n FROM outbox").n, 0);
+  assert.equal(s.one("SELECT COUNT(*) n FROM telegram_outbox").n, 0);
   s.db.close();
 });
-test("preparation deduplicates and freezes renders and phones; editing invalidates without sending", () => {
+test("preparation deduplicates and freezes renders without phone data or sending", () => {
   const s = setup();
   const c = saveCampaign(s, draft, "hr");
   const preview = previewCampaign(s, c.id);
@@ -76,15 +76,13 @@ test("preparation deduplicates and freezes renders and phones; editing invalidat
   assert.equal(preview.recipients[0].body_escaped, "&lt;b&gt;Ana&lt;/b&gt;");
   const p = prepareCampaign(s, c.id, 1, "hr");
   assert.equal(prepareCampaign(s, c.id, 1, "hr").id, p.id);
-  s.db.exec(
-    "UPDATE employees SET name='Changed',phone='5491100000099' WHERE id='e'",
-  );
+  s.db.exec("UPDATE employees SET name='Changed' WHERE id='e'");
   assert.equal(
     JSON.parse(
       s.one("SELECT snapshot_json FROM communication_preparations")
         .snapshot_json,
-    ).recipients[0].phone,
-    "5491100000011",
+    ).recipients[0].name,
+    "Ana",
   );
   saveCampaign(
     s,
@@ -100,7 +98,7 @@ test("preparation deduplicates and freezes renders and phones; editing invalidat
     "draft",
   );
   assert.equal(s.one("SELECT COUNT(*) n FROM communication_preparations").n, 1);
-  assert.equal(s.one("SELECT COUNT(*) n FROM outbox").n, 0);
+  assert.equal(s.one("SELECT COUNT(*) n FROM telegram_outbox").n, 0);
   s.db.close();
 });
 test("inactive explicit recipients and unsupported provider approval are rejected; sector selection omits inactive", () => {
@@ -142,12 +140,12 @@ test("inactive explicit recipients and unsupported provider approval are rejecte
 });
 test("onboarding previews authorized sites and never imply identity verification", () => {
   const s = setup();
-  const p = onboardingPreview(s, "e", "5491100000000");
+  const p = onboardingPreview(s, "e");
   assert.ok(p.text.includes("Central"));
   assert.ok(p.text.includes("salida desconocida"));
   assert.equal(p.identity_verified, false);
   assert.equal(p.dispatch_available, false);
-  assert.equal(onboardingPreview(s, "e", "").bot_number, null);
+  assert.match(p.text, /Telegram/);
   s.db.close();
 });
 
@@ -179,7 +177,7 @@ test("audit failure rolls template campaign and preparation writes back atomical
     s.one("SELECT status FROM communication_campaigns").status,
     "draft",
   );
-  assert.equal(s.one("SELECT COUNT(*) n FROM outbox").n, 0);
+  assert.equal(s.one("SELECT COUNT(*) n FROM telegram_outbox").n, 0);
   s.db.close();
 });
 test("communications APIs require admin or HR including previews and history; provider status cannot be claimed", async () => {
@@ -284,16 +282,22 @@ test("communications APIs require admin or HR including previews and history; pr
     assert.equal(history[0].actor, "hr@example.test");
     assert.equal(history[0].snapshot.provider_approved, false);
     assert.equal(history[0].snapshot.dispatch_available, false);
-    assert.equal(s.one("SELECT COUNT(*) n FROM outbox").n, 0);
+    assert.equal(s.one("SELECT COUNT(*) n FROM telegram_outbox").n, 0);
   } finally {
     await new Promise<void>((r) => server.close(() => r()));
     s.db.close();
   }
 });
-test("public bot number config validates without treating number as active integration", () => {
-  assert.throws(() => readConfig({ BOT_PUBLIC_NUMBER: "not-a-phone" }));
-  assert.doesNotThrow(() => readConfig({ BOT_PUBLIC_NUMBER: "5491100000000" }));
+test("Telegram configuration requires both secrets before enabling outbound", () => {
+  assert.throws(() => readConfig({ TELEGRAM_SEND_ENABLED: "true" }));
+  assert.doesNotThrow(() =>
+    readConfig({
+      TELEGRAM_SEND_ENABLED: "true",
+      TELEGRAM_BOT_TOKEN: "token",
+      TELEGRAM_WEBHOOK_SECRET: "secret",
+    }),
+  );
   const s = setup();
-  assert.throws(() => onboardingPreview(s, "e", "<invalid>"));
+  assert.match(onboardingPreview(s, "e").text, /Telegram/);
   s.db.close();
 });

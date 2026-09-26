@@ -69,7 +69,7 @@ export default function ManualAttendance({
           <form onSubmit={submit}>
             <p className="form-note">
               Cargá entrada y salida históricas verificadas. No se registra
-              ubicación ni se simula un mensaje de WhatsApp. Los horarios
+              ubicación ni se simula un mensaje de Telegram. Los horarios
               corresponden a la zona de tu dispositivo.
             </p>
             {error && (

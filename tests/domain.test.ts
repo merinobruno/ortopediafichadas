@@ -11,7 +11,7 @@ const setup = () => {
     .run();
   s.db
     .prepare(
-      "INSERT INTO employees(id,name,phone,role,site_ids) VALUES('e','Employee','5491100000001','Staff','[\"a\",\"b\"]')",
+      "INSERT INTO employees(id,name,role,site_ids) VALUES('e','Employee','Staff','[\"a\",\"b\"]')",
     )
     .run();
   return s;
@@ -23,7 +23,7 @@ const input = (
   time = "2026-09-09T12:00:00Z",
 ) => ({
   id,
-  phone: "5491100000001",
+  employeeId: "e",
   action,
   siteId: site,
   lat: site === "a" ? -34.6 : -34.61,
@@ -74,9 +74,9 @@ test("same-site duplicate and wrong-site departure cannot mutate attendance", ()
   assert.throws(() => applyAction(s, input("3", "exit", "b")));
   assert.equal(s.all("SELECT * FROM visits").length, 1);
 });
-test("unknown phone and delayed events rejected", () => {
+test("unknown employee ID and delayed events rejected", () => {
   const s = setup();
-  assert.throws(() => applyAction(s, { ...input("1"), phone: "999" }));
+  assert.throws(() => applyAction(s, { ...input("1"), employeeId: "missing" }));
   applyAction(s, input("2"));
   assert.throws(() =>
     applyAction(s, input("3", "exit", "a", "2026-09-09T11:00:00Z")),

@@ -17,7 +17,7 @@ const initial = {
   body: "",
   variables: ["nombre"],
   requires_signature: false,
-  channel: "whatsapp",
+  channel: "telegram",
   selection: {
     mode: "all",
     employee_ids: [] as string[],
@@ -145,7 +145,7 @@ export default function Communications({ employees }: { employees: Row[] }) {
     >
       <div className="info-line">
         Preparación local · Los canales y la firma son intenciones del borrador.
-        No hay envío, aprobación de Meta ni firma habilitados.
+        No hay envío externo ni firma habilitados.
       </div>
       <div className="comm-tabs" role="tablist" aria-label="Comunicaciones">
         {[
@@ -234,7 +234,7 @@ export default function Communications({ employees }: { employees: Row[] }) {
                 </h2>
                 <p>
                   {tab === "templates"
-                    ? "Cada guardado conserva una revisión inmutable. Son plantillas locales, no plantillas aprobadas por Meta."
+                    ? "Cada guardado conserva una revisión inmutable. Son plantillas locales de preparación."
                     : "Preparar congela destinatarios y textos. Nunca autoriza ni ejecuta un envío."}
                 </p>
               </div>
@@ -269,15 +269,18 @@ export default function Communications({ employees }: { employees: Row[] }) {
                             ? x.archived
                               ? "Archivada"
                               : "Activa"
-                            : x.status === "prepared"
-                              ? "Preparada · sin envío"
-                              : "Borrador"}
+                            : x.status === "incompatible"
+                              ? "Anterior · requiere nuevo borrador"
+                              : x.status === "prepared"
+                                ? "Preparada · sin envío"
+                                : "Borrador"}
                         </td>
                         <td>
                           <div className="comm-actions">
                             <button
                               className="secondary"
                               onClick={() => open(x)}
+                              disabled={x.status === "incompatible"}
                             >
                               Editar
                             </button>
@@ -457,7 +460,7 @@ export default function Communications({ employees }: { employees: Row[] }) {
                         value={form.channel}
                         onChange={(e) => change("channel", e.target.value)}
                       >
-                        <option value="whatsapp">WhatsApp · pendiente</option>
+                        <option value="telegram">Telegram · pendiente</option>
                         <option value="email">Email · pendiente</option>
                         <option value="both">Ambos · pendientes</option>
                       </select>
@@ -521,8 +524,8 @@ export default function Communications({ employees }: { employees: Row[] }) {
                     }
                   />
                   <small>
-                    Disponibles: nombre, telefono, sedes, empresa, fecha.
-                    Ejemplo: {"Hola {{nombre}}"}.
+                    Disponibles: nombre, sedes, empresa, fecha. Ejemplo:{" "}
+                    {"Hola {{nombre}}"}.
                   </small>
                 </label>
                 {tab === "drafts" && (
@@ -656,14 +659,12 @@ export default function Communications({ employees }: { employees: Row[] }) {
               )}
               <p>
                 {frozen
-                  ? "Los nombres, teléfonos y textos corresponden al momento de preparación. No se actualizan al modificar empleados."
+                  ? "Los nombres y textos corresponden al momento de preparación. No se actualizan al modificar empleados."
                   : "Revisá la selección antes de conservar una preparación. No se envían mensajes."}
               </p>
               {preview.recipients.map((r: Row) => (
                 <details key={r.employee_id}>
-                  <summary>
-                    {r.name} · +{r.phone}
-                  </summary>
+                  <summary>{r.name}</summary>
                   <h3>{r.subject}</h3>
                   <pre className="comm-preview">{r.body}</pre>
                 </details>

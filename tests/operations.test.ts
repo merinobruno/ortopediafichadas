@@ -8,7 +8,7 @@ test("configuration rejects invalid ports weak production password and incomplet
     { PORT: "0" },
     { PORT: "70000" },
     { NODE_ENV: "production", ADMIN_PASSWORD: "short" },
-    { WHATSAPP_SEND_ENABLED: "true", WHATSAPP_ACCESS_TOKEN: "private-secret" },
+    { TELEGRAM_SEND_ENABLED: "true", TELEGRAM_BOT_TOKEN: "private-secret" },
   ]) {
     assert.throws(
       () => readConfig(env),

@@ -10,7 +10,7 @@
     "test:basic": "vitest run",
     "test:legacy": "tsx --test tests/*.test.ts",
     "build": "npm run check && vite build",
-    "build:legacy": "tsc --noEmit && vite build && esbuild server/index.ts --bundle --platform=node --packages=external --format=esm --outfile=build/server.mjs && esbuild server/ops.ts --bundle --platform=node --packages=external --format=esm --outfile=build/ops.mjs && node scripts/copy-runtime.mjs",
+    "build:legacy": "tsc --noEmit && vite build --mode legacy && esbuild server/index.ts --bundle --platform=node --packages=external --format=esm --outfile=build/server.mjs && esbuild server/ops.ts --bundle --platform=node --packages=external --format=esm --outfile=build/ops.mjs && node scripts/copy-runtime.mjs",
     "check": "tsc --noEmit && tsc --noEmit -p tsconfig.basic.json",
     "format": "prettier --write src server shared tests *.json *.html *.ts",
     "start": "node build/server.mjs",

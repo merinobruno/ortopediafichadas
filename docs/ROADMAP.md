@@ -9,14 +9,14 @@ remain stable; old phone and WhatsApp transport rows are retained only for a
 private, bounded cleanup after cutover, with no replay. Local tests and build
 verify source behavior; bot provisioning, HTTPS webhook registration, and a live
 link/location/reply check remain pending. The inventory below describes the
-retained SQLite product and its separate migration work.
+retained SQLite product after its separate local Telegram migration.
 
 The September 9 attendance design remains the domain baseline; the approved September 26 Telegram design supersedes its transport and phone identity decisions. Reference navigation is evidence of inventory, not completed parity. The reference settings also expose a multiple-fichada option; the user's failure was observed by the user, not diagnosed here.
 
 | Group | Delivered | Remaining |
 | --- | --- | --- |
-| Attendance foundation | Dashboard, employee/site editing, registered phones, multiple daily visits, geofences, site access, atomic unknown exit alert, audited exit/pause correction and manual historical complete visits, simulator, filtered detail/summary CSV and overall/employee/site net-hour reports | Individual admin/HR/supervisor accounts and assigned-employee scope delivered; employee self-service/onboarding and stronger retention controls remain |
-| WhatsApp | Signed webhook, durable inbox/pending/outbox, exact site-name disambiguation, config-gated official sender, delivery status handling, bounded retry, safe uncertain state | Real Meta account/number/configuration, HTTPS deployment, monitoring, template messages and operator recovery UI; no live connection verified |
+| Attendance foundation | Dashboard, phone-free employee/site editing, multiple daily visits, geofences, site access, atomic unknown exit alert, audited exit/pause correction and manual historical complete visits, simulator, filtered detail/summary CSV and overall/employee/site net-hour reports | Employee self-service/onboarding and stronger retention controls remain |
+| Telegram | HR-issued hashed link codes, verified private webhook, durable ordered inbox/pending/outbox, exact site-name disambiguation, config-gated sender, explicit 429 retry and uncertain-state review | Private bot provisioning, HTTPS deployment, monitoring and live end-to-end verification remain |
 | HR operations | Leave request/review through shared HTTP/bot creation, administrative and employee bot pauses, effective dated7/14-day cycles, versioned manual weekly date overrides and scoped attendance calendar with rest/leave/holiday/tolerance handling, manual overtime request/review, revision-checked editable/soft-archivable shifts/holidays/taxonomy, enforced site category links and audited employee association removal | Leave balances/accruals/attachments, split shifts and automatic overnight matching, automatic overtime policy |
 | Alerts and reports | Unknown-exit queue and audit; configurable in-panel late/absence rules, priority and reviewed/resolved states; overall/employee/site net-hour reports with pauses, Buenos Aires filtering, detail/summary CSV and bounded applied-filter XLSX/PDF exports | External notifications/escalation, payroll policy, payroll-specific reporting |
 | Extended integrations | Local immutable template revisions, draft recipient preview/preparation and onboarding instruction previews; private PDF draft/archive batches with manual assignment and authenticated downloads | External communication delivery, invitations, provider-approved templates and signatures; receipt portal/publication, ZIP/automatic mapping and electronic signatures; biometric devices/rejected events; analytics integration; subscription scope clarification |
@@ -32,7 +32,7 @@ The implementation is a working initial local product, not a claim to reproduce 
 
 ## Operations preparation delivered
 
-Built Node 24 production entry, explicit configuration validation, redacted liveness/readiness, bounded sender shutdown, WAL-consistent verified backup and new-path restore with session revocation and replay quarantine are implemented. The runbook covers supervision and recovery. Managed deployment, external monitoring, private storage policy, PostgreSQL and live Meta activation still require deployment work; no production availability is claimed.
+Built Node 24 production entry, explicit configuration validation, redacted liveness/readiness, bounded sender shutdown, WAL-consistent verified backup and new-path restore with session revocation and replay quarantine are implemented. The runbook covers supervision and recovery. Managed deployment, external monitoring, private storage policy, PostgreSQL and live Telegram activation still require deployment work; no production availability is claimed.
 
 
 ## In-panel attendance rules delivered
@@ -57,8 +57,4 @@ Read-only reference inspection established this remaining inventory, without imp
 
 ## Core employee bot commands delivered
 
-Pausa/finpausa, pending-only leave requests, ayuda and attendance-intention cancellation share the registered-phone receiver. Provider freshness/future guards, pause chronology, original receipt/event timestamps, durable idempotency and atomic reply rollback are covered by tests. The local textual simulator has independent pending/history and never queues outbound provider messages. Provider deployment, live WhatsApp testing and advanced leave policies remain pending.
-
-
-
-
+Pausa/finpausa, pending-only leave requests, ayuda and attendance-intention cancellation share the linked Telegram employee identity. Provider freshness/future guards, pause chronology, original receipt/event timestamps, durable idempotency and atomic reply rollback are covered by tests. The local textual simulator has independent pending/history and never queues outbound provider messages. Provider deployment, live Telegram testing and advanced leave policies remain pending.

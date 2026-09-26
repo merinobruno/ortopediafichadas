@@ -4,10 +4,6 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env) {
   const port = Number(env.PORT || 4381);
   if (!Number.isInteger(port) || port < 1 || port > 65535)
     throw new Error("PORT must be an integer from 1 to 65535");
-  if (env.BOT_PUBLIC_NUMBER && !/^\d{10,15}$/.test(env.BOT_PUBLIC_NUMBER))
-    throw new Error(
-      "BOT_PUBLIC_NUMBER must contain 10 to 15 international digits",
-    );
   const production = env.NODE_ENV === "production";
   if (
     production &&
@@ -19,17 +15,13 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env) {
       "A non-demo ADMIN_PASSWORD of at least 12 characters is required",
     );
   if (
-    env.WHATSAPP_SEND_ENABLED === "true" &&
-    (![
-      "WHATSAPP_ACCESS_TOKEN",
-      "WHATSAPP_PHONE_NUMBER_ID",
-      "WHATSAPP_APP_SECRET",
-      "WHATSAPP_VERIFY_TOKEN",
-    ].every((k) => env[k]?.trim()) ||
-      !/^v\d+\.\d+$/.test(env.WHATSAPP_API_VERSION || ""))
+    env.TELEGRAM_SEND_ENABLED === "true" &&
+    !["TELEGRAM_BOT_TOKEN", "TELEGRAM_WEBHOOK_SECRET"].every((k) =>
+      env[k]?.trim(),
+    )
   )
     throw new Error(
-      "Explicit sending requires complete WhatsApp configuration",
+      "Explicit sending requires Telegram bot token and webhook secret",
     );
   return {
     port,

@@ -19,7 +19,8 @@ const sources = {
   manual_hr: "Carga manual RRHH",
   simulator: "Simulador",
   demo: "Demo",
-  whatsapp: "WhatsApp",
+  telegram: "Telegram",
+  whatsapp: "WhatsApp (histórico)",
 };
 const day = (value) =>
   new Date(value).toLocaleDateString("en-CA", {

@@ -1,6 +1,6 @@
 # Carahue — Personas y asistencia
 
-A runnable local HR application with a shared attendance domain for WhatsApp and simulation. Spanish UI; English code and documentation. The project is not deployed and no external messages were sent during implementation.
+A runnable local HR application with Telegram-linked attendance and a separate local simulator. The cloud Basic app has an independent Convex/Vercel backend. Spanish UI; English code and documentation. This source change was not deployed and sent no external messages.
 
 ## Run
 
@@ -8,7 +8,7 @@ Requires Node 24 and npm:
 
 ```sh
 npm install
-npm run dev
+npm run dev:legacy
 ```
 
 Open http://127.0.0.1:4381. Local demo email: `admin@carahue.local`. Local demo password: `Carahue-demo-2026` unless ADMIN_PASSWORD is configured. The synthetic seed is inserted only into an empty employee database. Data persists in `data/carahue.sqlite`. Use a separate DATABASE_PATH and DEMO_MODE=false for a clean dataset; never erase a live database to reset demo data.
@@ -17,14 +17,15 @@ Open http://127.0.0.1:4381. Local demo email: `admin@carahue.local`. Local demo 
 npm test
 npm run check
 npm run build
+npm run build:legacy
 npm run format
 ```
 
-For a production-shaped run, build first and set NODE_ENV=production, ADMIN_PASSWORD, DEMO_MODE=false, DATABASE_PATH, HOST, PORT. Secure session cookies require HTTPS. NODE_ENV=production does not seed unless DEMO_MODE=true. This is still single-instance SQLite, not the proposed PostgreSQL production architecture.
+For a production-shaped local-server run, build with `npm run build:legacy` first and set NODE_ENV=production, ADMIN_PASSWORD, DEMO_MODE=false, DATABASE_PATH, HOST, PORT. Secure session cookies require HTTPS. NODE_ENV=production does not seed unless DEMO_MODE=true. This remains single-instance SQLite.
 
 ## Implemented
 
-- Registered employee phone numbers, site authorizations, geofences, active flags, editable employee/site records.
+- Employee IDs with private Telegram linking, site authorizations, geofences, active flags, editable employee/site records.
 - Multiple visits/day, returns to a previous site, duplicate delivery protection. Entry at another authorized site atomically marks the prior visit exit_unknown, creates an alert and opens the new visit. No invented exit.
 - Explicit entry/exit intent, five-minute pending location window, overlapping geofence selection by exact site name, stale-message rejection.
 - HR unknown-exit correction preserves original observation in audit with actor/reason. Event audit records coordinates, action, site, provider time and receipt time. Report days use Buenos Aires.
@@ -35,21 +36,16 @@ For a production-shaped run, build first and set NODE_ENV=production, ADMIN_PASS
 - Organization holidays, sector/tag/category catalogs, employee sector/tag associations. Categories remain descriptive free text on sites; no enforced catalog relationship.
 - Responsive HR interface, individual-account cookie sessions, login rate limiting, local simulator clearly marked.
 
-## WhatsApp configuration
+## Telegram configuration
 
-Set WHATSAPP_VERIFY_TOKEN for GET subscription handshake and WHATSAPP_APP_SECRET for raw-body HMAC-SHA256 validation. Set WHATSAPP_PHONE_NUMBER_ID to restrict inbound business metadata. All messages in all entry/change arrays are persisted; key combines business phone ID and message ID. Subscribe the official WhatsApp application to the HTTPS /webhook/whatsapp endpoint.
+Set `TELEGRAM_WEBHOOK_SECRET` and register the HTTPS `/webhook/telegram` callback with Telegram `setWebhook` and its `secret_token`. Only original private messages with matching numeric sender/chat IDs enter the durable inbox. HR issues a single-use 10-character code valid for 15 minutes; the employee sends `/start CODE` in a private bot chat. Codes are hashed before durable insertion. Link revocation and employee deactivation block queued work, including after relinking to the same account.
 
-The worker runs every two seconds. Inbox, pending intent, attendance and reply queue writes share a transaction; rollback leaves input pending. Official Graph sender runs only if WHATSAPP_SEND_ENABLED=true and WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_API_VERSION are configured. Choose a supported Graph version explicitly; no current-version claim is encoded. Secrets stay server-side.
-
-Outgoing confirmations use POST https://graph.facebook.com/{version}/{phone-id}/messages. Provider acceptance is distinct from delivery/read callbacks. Responses expire after the 24-hour free-form window. Explicit 429/5xx responses retry with bounded backoff up to five attempts. Transport uncertainty and interrupted sends become uncertain and require provider inspection before manual recovery; they are never blindly resent. No templates or automated uncertain-message recovery exist. Queue details are visible in Configuración.
-
-Official reference: https://www.postman.com/meta/whatsapp-business-platform/request/ntthgns/received-static-location-messages
-
+The worker runs every two seconds. Inbox, pending intent, attendance, result and reply queue writes share a transaction. `TELEGRAM_SEND_ENABLED=true` also requires `TELEGRAM_BOT_TOKEN` and the webhook secret. Only confirmed Telegram `sendMessage` success is accepted; explicit proved-unsent 429 responses retry with bounded backoff. Timeout, 5xx, malformed success and interrupted sends require operator review and are never blindly resent. Secrets stay server-side. See [the Convex guide](docs/BASIC-CONVEX.md) for the separate cloud deployment.
 ## Security and operational limits
 
 Individual accounts use salted scrypt password hashes. Admin manages accounts and global operation; HR operates globally but cannot manage accounts; supervisors read assigned employees and approve/reject only their leave/overtime. Every other supervisor mutation is forbidden server-side. PostgreSQL migration, retention tooling, monitoring, backups/restore testing and 24/7 hosting remain required before real employee rollout. Use only one application process and one local database file; do not deploy SQLite on a shared network volume. Location sharing supplies coordinates, not proof against spoofing.
 
-Config: PORT=4381, HOST=127.0.0.1, DATABASE_PATH=data/carahue.sqlite. ADMIN_PASSWORD is mandatory in production. DEMO_MODE defaults on only outside production. All WhatsApp variables default unset, sending disabled.
+Config: PORT=4381, HOST=127.0.0.1, DATABASE_PATH=data/carahue.sqlite. ADMIN_PASSWORD is mandatory in production. DEMO_MODE defaults on only outside production. Telegram sending defaults disabled.
 
 See docs/ROADMAP.md for the entire reference inventory and remaining scope.
 
@@ -89,12 +85,12 @@ Detail CSV and group summary CSV use the same applied filters as the JSON report
 
 ## Operations preparation
 
-Build now produces a runtime-only server and operator CLI. See [the operations runbook](docs/OPERATIONS.md) for configuration, health, graceful shutdown, consistent backups, new-path restoration and replay quarantine. This does not activate hosting or WhatsApp. Run `node scripts/verify-production.mjs` after building to rehearse an isolated runtime-only installation.
+The legacy build produces a runtime-only server, operator CLI and separate `dist-legacy` UI. See [the operations runbook](docs/OPERATIONS.md) for configuration, health, graceful shutdown, consistent backups, new-path restoration and replay quarantine. This does not activate hosting or Telegram. Run `node scripts/verify-production.mjs` after building to rehearse an isolated runtime-only installation.
 
 
 ## Attendance exception rules
 
-Late/absence rules are initially disabled and operate only in the panel. Admin/HR enables them from server Buenos Aires today and chooses a priority. Activation periods are retained across disable/re-enable; historical days outside them do not create exceptions. No email, WhatsApp notifications or payroll penalties are generated.
+Late/absence rules are initially disabled and operate only in the panel. Admin/HR enables them from server Buenos Aires today and chooses a priority. Activation periods are retained across disable/re-enable; historical days outside them do not create exceptions. No email, Telegram notifications or payroll penalties are generated.
 
 The calendar is the evaluator: first entry across sites, shift snapshots/tolerance and approved full-day leave/holiday/rest exclusions remain authoritative. Absence begins only after the known shift end; overnight schedules require human calendar review. Acknowledgement records its first actor/time/reason and does not resolve an active condition. Actual changed attendance or expectations can resolve or reactivate the same employee/day/type identity; initial evidence and priority remain immutable.
 
@@ -102,15 +98,15 @@ Reconciliation runs durably in the application worker, one day and at most 100 e
 
 ## Local communications and onboarding instructions
 
-Admin/HR can create local templates with immutable revisions, archive/restore them, and prepare drafts for all active employees, a sector or individual employees. Supported placeholders are `{{nombre}}`, `{{telefono}}`, `{{sedes}}`, `{{empresa}}` and `{{fecha}}`; declare the used names in the form. Unknown/undeclared placeholders fail validation. Content is plain text: pasted HTML is displayed literally, never executed.
+Admin/HR can create local templates with immutable revisions, archive/restore them, and prepare drafts for all active employees, a sector or individual employees. Supported placeholders are `{{nombre}}`, `{{sedes}}`, `{{empresa}}` and `{{fecha}}`; declare the used names in the form. Unknown/undeclared placeholders fail validation. Content is plain text: pasted HTML is displayed literally, never executed.
 
-Saving a draft invalidates its current preparation. Preparing freezes its revision, recipient IDs/names/phones and rendered subject/body, while preserving earlier preparations. Repeated preparation of the same revision is idempotent. Existing snapshots do not change when employees or templates change. Explicit inactive recipients are rejected; all/sector selection omits inactive employees. Supervisors cannot access these APIs.
+Saving a draft invalidates its current preparation. Preparing freezes its revision, recipient IDs/names and rendered subject/body, while preserving earlier preparations. Repeated preparation of the same revision is idempotent. Existing snapshots do not change when employees or templates change. Explicit inactive recipients are rejected; all/sector selection omits inactive employees. Supervisors cannot access these APIs.
 
-**Prepared does not mean sent, signed or provider-approved.** No communication operation queues WhatsApp messages or calls a provider. WhatsApp/email/both and signature requirement are planning metadata only. Local templates are separate from Meta-approved templates. Email addresses, provider template approval, signatures, external dispatch and delivery tracking for these drafts remain unimplemented.
+**Prepared does not mean sent, signed or provider-approved.** No communication operation queues Telegram messages or calls a provider. Telegram/email/both and signature requirement are planning metadata only. Existing phone-based draft templates are archived and incompatible drafts cannot be prepared; historical preparation snapshots remain intact. Email addresses, signatures, external dispatch and delivery tracking remain unimplemented.
 
-Optional `BOT_PUBLIC_NUMBER` accepts 10–15 international digits without `+` and appears only as a public contact in HR's onboarding preview. Configuring it does not connect the bot. Instructions explain entry, exit, native location sharing, authorized sites and unknown-exit behavior. They do not create invitations, verify DNI/identity, obtain terms acceptance or complete employee onboarding.
+HR's onboarding preview explains private Telegram linking, entry, exit, native location sharing, authorized sites and unknown-exit behavior. It does not create invitations, verify DNI/identity, obtain terms acceptance or complete employee onboarding.
 
-## Employee WhatsApp HR commands
+## Employee Telegram HR commands
 
 The receiver now supports `pausa`, `finpausa`, `ayuda`, `cancelar`, and a one-message leave request:
 
@@ -118,13 +114,13 @@ The receiver now supports `pausa`, `finpausa`, `ayuda`, `cancelar`, and a one-me
 solicitar licencia 17/09/2026 18/09/2026 | Vacaciones anuales | Viaje familiar confirmado
 ```
 
-Requests remain pending for HR/supervisor review; employees cannot approve their requests or nominate another employee. Identity comes only from the active registered phone. HTTP and bot requests share civil-date validation and audited creation. Pause commands reuse the visit-bound service with entry/known-pause chronology checks; unknown endings still require HR confirmation.
+Requests remain pending for HR/supervisor review; employees cannot approve their requests or nominate another employee. Identity comes only from the active private Telegram link. HTTP and bot requests share civil-date validation and audited creation. Pause commands reuse the visit-bound service with entry/known-pause chronology checks; unknown endings still require HR confirmation.
 
 Complete or explicitly cancel a pending attendance/location selection before HR commands. An exact authorized site name takes precedence, including a site named `Pausa`. `cancelar` discards only the pending attendance intention, not visits, pauses or leave requests. Help preserves the conversation.
 
 Provider timestamps must exist, parse, be no later than the processing clock and no more than 15 minutes old. These guards cover entry, location and HR commands. Provider event time and original inbox receipt time are stored separately. Message identity, domain mutations, audit, persisted bot result, inbox status and reply outbox share the existing transaction; replay cannot repeat a successful effect.
 
-The Simulador page also offers a local text conversation and simulated location sharing for an admin/HR-selected employee. Its pending namespace and persisted history are distinct from the provider conversation. It never creates provider inbox messages, messaging windows or outbox rows, even if external sending is later enabled. Records retain `simulator` provenance. These local paths do not verify real WhatsApp delivery or location authenticity.
+The Simulador page also offers a local text conversation and simulated location sharing for an admin/HR-selected employee. Its pending namespace and persisted history are distinct from the provider conversation. It never creates provider inbox messages, messaging windows or outbox rows, even if external sending is later enabled. Records retain `simulator` provenance. These local paths do not verify real Telegram delivery or location authenticity.
 
 ## Private PDF receipt preparation
 
@@ -160,8 +156,8 @@ Excel has four sheets: summary, employees, sites and detail. Metrics are numeric
 
 Rendering runs from an immutable read-transaction snapshot in a database-free worker: 10,000 detail rows for XLSX / 2,000 for PDF, 20 MiB output, 30-second deadline, one active worker per account and two globally, with V8 heap bounds and disconnect cleanup. These are application bounds, not an OS memory sandbox. Attachments are authenticated, private/no-store and nosniff. The runtime-only verification script exercises both compiled-worker exports with synthetic attendance. QA files under `tmp/reports` contain fictional data and are not production receipts.
 
-## WhatsApp operator review
+## Telegram operator review
 
-Admin/HR can inspect reception and outbound metadata in **Operación WhatsApp**, with status/review filters and 25-record cursor pages. Raw payloads, message bodies, locations, phone numbers, provider identifiers and arbitrary error strings are not exposed by this endpoint. Employee names are linked only where the existing outbound phone safely identifies a registered record. Existing status represents the latest stored transport/provider delivery state; no last-attempt or delivery timestamp is invented.
+Admin/HR can inspect reception and outbound metadata in **Operación Telegram**, with status/review filters and 25-record cursor pages. Raw payloads, message bodies, locations, Telegram account IDs, provider identifiers and arbitrary error strings are not exposed by this endpoint. Employee names are linked only where the existing outbound employee ID safely identifies a registered record. Existing status represents the latest stored transport/provider delivery state; no last-attempt or delivery timestamp is invented.
 
 Review annotations are append-only revisions with authenticated actor, reason and optimistic conflict checking, audited atomically. Reviewed or dismissed means reviewed/removed from human review only: it does not retry, cancel, requeue, edit attendance or release recovery holds. Existing automatic sender policy is unchanged; uncertain outcomes remain blocked from blind resend. The view explicitly refreshes and preserves pending forms on errors. Supervisors are denied before any operator lookup.

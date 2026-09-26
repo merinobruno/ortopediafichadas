@@ -66,7 +66,7 @@ test("association removal and catalog updates are audited atomically without del
   const s = new Store(":memory:");
   try {
     s.db.exec(
-      "INSERT INTO employees(id,name,phone) VALUES('e','Synthetic','123')",
+      "INSERT INTO employees(id,name,role) VALUES('e','Synthetic','123')",
     );
     const c = createCatalog(s, "sector", { name: "Synthetic sector" }, "hr");
     setEmployeeAssociation(
@@ -131,7 +131,7 @@ test("shift edits and archives preserve dated schedule snapshots and forbid new 
   const s = new Store(":memory:");
   try {
     s.db.exec(
-      "INSERT INTO employees(id,name,phone) VALUES('e','Synthetic','123')",
+      "INSERT INTO employees(id,name,role) VALUES('e','Synthetic','123')",
     );
     const shift = createCatalog(
       s,
@@ -195,7 +195,7 @@ test("association removal changes future previews but never prepared snapshots; 
   const s = new Store(":memory:");
   try {
     s.db.exec(
-      "INSERT INTO employees(id,name,phone) VALUES('e','Synthetic','123')",
+      "INSERT INTO employees(id,name,role) VALUES('e','Synthetic','123')",
     );
     const sector = createCatalog(s, "sector", { name: "Sector" }, "hr");
     setEmployeeAssociation(
@@ -210,7 +210,7 @@ test("association removal changes future previews but never prepared snapshots; 
       s,
       {
         type: "circular",
-        channel: "whatsapp",
+        channel: "telegram",
         requires_signature: false,
         subject: "Hello",
         body: "Synthetic message",
@@ -259,7 +259,7 @@ test("holiday archival and date replacement reconcile expectations without alter
   const s = new Store(":memory:");
   try {
     s.db.exec(
-      "INSERT INTO employees(id,name,phone) VALUES('e','Synthetic','123')",
+      "INSERT INTO employees(id,name,role) VALUES('e','Synthetic','123')",
     );
     const shift = createCatalog(
       s,
@@ -420,7 +420,7 @@ test("catalog HTTP preserves revision conflict status and rejects supervisor mut
   process.env.ADMIN_PASSWORD = "Catalog-admin-test-2026";
   const s = new Store(":memory:");
   s.db.exec(
-    "INSERT INTO employees(id,name,phone) VALUES('e','Assigned','123'),('other','Other','456');INSERT INTO sites VALUES('s','Site','Address',0,0,100,'Legacy',1)",
+    "INSERT INTO employees(id,name,role) VALUES('e','Assigned','123'),('other','Other','456');INSERT INTO sites VALUES('s','Site','Address',0,0,100,'Legacy',1)",
   );
   const app = createApp(s);
   upsertUser(

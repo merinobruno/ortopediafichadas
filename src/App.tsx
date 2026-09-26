@@ -1,4 +1,4 @@
-import WhatsAppOperations from "./WhatsAppOperations";
+import TelegramOperations from "./TelegramOperations";
 import WeeklyPlanning from "./WeeklyPlanning";
 import Catalogs from "./Catalogs";
 import Receipts from "./Receipts";
@@ -65,7 +65,7 @@ const nav = [
   ["reports", "Reportes", ChartNoAxesCombined],
   ["simulator", "Simulador", MessageCircle],
   ["hr", "Operación de RRHH", ClipboardList],
-  ["waOperations", "Operación WhatsApp", MessageCircle],
+  ["telegramOperations", "Operación Telegram", MessageCircle],
   ["settings", "Configuración", Settings],
   ["accounts", "Usuarios y permisos", Users],
   ["communications", "Comunicaciones", MessageCircle],
@@ -155,6 +155,11 @@ export default function App() {
     [from, setFrom] = useState(""),
     [to, setTo] = useState(""),
     [personFilter, setPersonFilter] = useState("");
+  const [linkCode, setLinkCode] = useState<{
+    employee: string;
+    code: string;
+    expiresAt: string;
+  } | null>(null);
   const [planningLocked, setPlanningLocked] = useState(false);
   const [config, setConfig] = useState({ demo: false, defaultPassword: false });
   useEffect(() => {
@@ -194,6 +199,7 @@ export default function App() {
     setNotice("");
     setError("");
     setChat([]);
+    setLinkCode(null);
   }, [data?.user?.id, auth]);
   useEffect(() => {
     if (!auth) return;
@@ -232,6 +238,7 @@ export default function App() {
     setSearch("");
     setError("");
     setMobile(false);
+    setLinkCode(null);
   };
   if (loading)
     return <div className="loading">Cargando tu espacio de trabajo…</div>;
@@ -387,7 +394,11 @@ export default function App() {
                       ? "Simulador"
                       : v.source === "manual_hr"
                         ? "Carga manual RRHH"
-                        : "WhatsApp"}
+                        : v.source === "telegram"
+                          ? "Telegram"
+                          : v.source === "whatsapp"
+                            ? "WhatsApp (histórico)"
+                            : v.source}
                 </span>
               </td>
             </tr>
@@ -462,7 +473,7 @@ export default function App() {
                     "settings",
                     "communications",
                     "receipts",
-                    "waOperations",
+                    "telegramOperations",
                   ].includes(id)),
             )
             .map(([id, name, Icon]) => (
@@ -573,12 +584,12 @@ export default function App() {
                       alerts: "Revisá las excepciones y completá lo que falta.",
                       leaves: "Solicitudes y ausencias del equipo.",
                       shifts: "Horarios de referencia para tu organización.",
-                      waOperations:
+                      telegramOperations:
                         "Estado de las colas y revisión humana, sin reenvíos manuales.",
                       reports: "Datos claros para tomar mejores decisiones.",
                       simulator:
                         "Probá el circuito de fichadas sin enviar mensajes reales.",
-                      settings: "Estado del entorno y conexión con WhatsApp.",
+                      settings: "Estado del entorno y conexión con Telegram.",
                     } as Row
                   )[page]
                 }
@@ -665,15 +676,6 @@ export default function App() {
                           defaultValue={editor.name}
                           required
                           minLength={2}
-                        />
-                      </Field>
-                      <Field label="Teléfono con código de país">
-                        <input
-                          name="phone"
-                          defaultValue={editor.phone}
-                          placeholder="54911…"
-                          pattern="[0-9]{10,15}"
-                          required
                         />
                       </Field>
                       <Field label="Puesto">
@@ -1055,12 +1057,30 @@ export default function App() {
                   {data.employees.length} empleados registrados
                 </span>
               </div>
+              {linkCode && (
+                <div className="panel" role="status">
+                  <strong>
+                    Código de Telegram para {linkCode.employee}: {linkCode.code}
+                  </strong>
+                  <p>
+                    Compartilo por un canal seguro. Vence a las{" "}
+                    {new Date(linkCode.expiresAt).toLocaleTimeString("es-AR")} y
+                    se muestra una sola vez.
+                  </p>
+                  <button
+                    className="text-button"
+                    onClick={() => setLinkCode(null)}
+                  >
+                    Ocultar código
+                  </button>
+                </div>
+              )}
               <div className="table-wrap">
                 <table>
                   <thead>
                     <tr>
                       <th>Empleado</th>
-                      <th>WhatsApp registrado</th>
+                      <th>Telegram</th>
                       <th>Sedes habilitadas</th>
                       <th>Estado</th>
                       <th />
@@ -1082,7 +1102,9 @@ export default function App() {
                               </span>
                             </div>
                           </td>
-                          <td className="numbers">+{e.phone}</td>
+                          <td>
+                            {e.telegram_linked ? "Vinculado" : "Sin vincular"}
+                          </td>
                           <td>
                             {e.site_ids
                               .map((id: string) => site(id)?.name)
@@ -1092,6 +1114,50 @@ export default function App() {
                             <Badge value={e.active ? "Activo" : "Inactivo"} />
                           </td>
                           <td>
+                            {!supervisor && (
+                              <>
+                                <button
+                                  className="text-button"
+                                  onClick={async () => {
+                                    try {
+                                      const result = await api(
+                                        `employees/${e.id}/telegram-code`,
+                                        {},
+                                      );
+                                      setLinkCode({
+                                        employee: e.name,
+                                        ...result,
+                                      });
+                                      await refresh();
+                                    } catch (error) {
+                                      setError((error as Error).message);
+                                    }
+                                  }}
+                                  disabled={!!e.telegram_linked}
+                                >
+                                  Generar código
+                                </button>
+                                {e.telegram_linked && (
+                                  <button
+                                    className="text-button"
+                                    onClick={async () => {
+                                      try {
+                                        await api(
+                                          `employees/${e.id}/telegram-revoke`,
+                                          {},
+                                        );
+                                        await refresh();
+                                        setLinkCode(null);
+                                      } catch (error) {
+                                        setError((error as Error).message);
+                                      }
+                                    }}
+                                  >
+                                    Desvincular
+                                  </button>
+                                )}
+                              </>
+                            )}
                             <button
                               hidden={supervisor}
                               className="text-button"
@@ -1310,8 +1376,8 @@ export default function App() {
               />
             </>
           )}
-          {page === "waOperations" && !supervisor && (
-            <WhatsAppOperations onLockChange={setPlanningLocked} />
+          {page === "telegramOperations" && !supervisor && (
+            <TelegramOperations onLockChange={setPlanningLocked} />
           )}
           {page === "reports" && (
             <Reports employees={data.employees} sites={data.sites} />
@@ -1322,7 +1388,7 @@ export default function App() {
                 <h2>Prepará una fichada</h2>
                 <p>
                   Usa las mismas reglas de asistencia que el receptor de
-                  WhatsApp.
+                  Telegram.
                 </p>
                 <Field label="Empleado">
                   <select
@@ -1388,7 +1454,7 @@ export default function App() {
                         },
                       ]);
                       const r = await api("simulate", {
-                        phone: e?.phone,
+                        employeeId: e?.id,
                         action: sim.action,
                         siteId: sim.site,
                         lat: sim.outside ? 0 : s?.lat,
@@ -1417,7 +1483,7 @@ export default function App() {
                 </button>
                 <p className="muted">
                   Los registros se guardan con origen «Simulador». No se envía
-                  ningún WhatsApp.
+                  ningún Telegram.
                 </p>
               </section>
               <section className="chat">
@@ -1501,7 +1567,7 @@ export default function App() {
               <section className="panel settings-panel">
                 <div className="section-heading">
                   <div>
-                    <h2>WhatsApp Business</h2>
+                    <h2>Telegram Business</h2>
                     <p>Receptor preparado; conexión de producción pendiente.</p>
                   </div>
                   <Badge value="Sin conexión activa" />
@@ -1509,7 +1575,7 @@ export default function App() {
                 <div className="setting-row">
                   <span>
                     Receptor de mensajes firmados
-                    <small>Webhook de Meta con verificación de firma</small>
+                    <small>Webhook de Telegram con secreto compartido</small>
                   </span>
                   <strong>
                     {data.integration.configured
@@ -1556,10 +1622,10 @@ export default function App() {
                   {data.integration.outbox.length} respuestas en historial
                 </p>
                 {data.integration.inbox.map((m: Row) => (
-                  <div className="setting-row" key={m.id}>
+                  <div className="setting-row" key={m.update_id}>
                     <span>
-                      {m.id}
-                      <small>{m.error || "Procesamiento durable"}</small>
+                      Actualización {m.update_id}
+                      <small>{m.reason_code || "Procesamiento durable"}</small>
                     </span>
                     <Badge value={m.status} />
                   </div>
@@ -1568,10 +1634,10 @@ export default function App() {
                   <div className="setting-row" key={"out-" + m.id}>
                     <span>
                       Respuesta · {m.id}
-                      <small>{m.text}</small>
-                      {m.error && (
+                      <small>{m.reason_code || "Respuesta registrada"}</small>
+                      {m.reason_code && (
                         <small>
-                          {m.error} · Revisar en el proveedor antes de
+                          {m.reason_code} · Revisar en el proveedor antes de
                           reintentar.
                         </small>
                       )}
@@ -1582,7 +1648,7 @@ export default function App() {
               </section>
               <div className="info-line">
                 Para operar 24/7 faltan el despliegue HTTPS, credenciales de
-                Meta y controles de operación. Consultá README.md y
+                Telegram y controles de operación. Consultá README.md y
                 docs/ROADMAP.md.
               </div>
             </>

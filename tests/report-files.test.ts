@@ -5,7 +5,7 @@ import { selectExportReport, selectReport } from "../server/reports";
 function setup() {
   const s = new Store(":memory:");
   s.db.exec(
-    `INSERT INTO employees(id,name,phone) VALUES('e','=SUM(1,2) Álvarez','123'),('x','Hidden','456');INSERT INTO sites(id,name,address,lat,lon,radius) VALUES('s','Sede Ñandú','Address',0,0,100),('b','Other site','Address',1,1,100);INSERT INTO visits VALUES('v','e','s','2026-09-15T02:00:00Z','2026-09-15T04:00:00Z','complete','demo'),('other','e','b','2026-09-15T12:00:00Z',NULL,'open','demo'),('hidden','x','s','2026-09-15T01:00:00Z',NULL,'open','demo');INSERT INTO breaks VALUES('pause','v','2026-09-15T02:30:00Z','2026-09-15T03:00:00Z','complete');INSERT INTO overtime VALUES('extra','v',30,'Separate approved minutes','approved')`,
+    `INSERT INTO employees(id,name,role) VALUES('e','=SUM(1,2) Álvarez','123'),('x','Hidden','456');INSERT INTO sites(id,name,address,lat,lon,radius) VALUES('s','Sede Ñandú','Address',0,0,100),('b','Other site','Address',1,1,100);INSERT INTO visits VALUES('v','e','s','2026-09-15T02:00:00Z','2026-09-15T04:00:00Z','complete','demo'),('other','e','b','2026-09-15T12:00:00Z',NULL,'open','demo'),('hidden','x','s','2026-09-15T01:00:00Z',NULL,'open','demo');INSERT INTO breaks VALUES('pause','v','2026-09-15T02:30:00Z','2026-09-15T03:00:00Z','complete');INSERT INTO overtime VALUES('extra','v',30,'Separate approved minutes','approved')`,
   );
   return s;
 }

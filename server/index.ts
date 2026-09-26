@@ -2,9 +2,9 @@ import { frontendFiles } from "./dev-files";
 import { processExceptions } from "./attendance-exceptions";
 import express from "express";
 import { Store } from "./store";
-import { createApp, processInbox } from "./app";
+import { createApp } from "./app";
 import { seed } from "./seed";
-import { sendOutbox } from "./whatsapp";
+import { processTelegramInbox, sendTelegramOutbox } from "./telegram";
 import { readConfig, prepareDatabasePath } from "./config";
 import { WorkerLifecycle } from "./lifecycle";
 import { installHealth } from "./health";
@@ -23,9 +23,15 @@ if (config.demo) seed(s);
 if (!process.env.ADMIN_PASSWORD)
   process.env.ADMIN_PASSWORD = "Carahue-demo-2026";
 const worker = new WorkerLifecycle(async () => {
-  processInbox(s);
+  processTelegramInbox(s);
   processExceptions(s);
-  await sendOutbox(s, fetch, process.env, Date.now, () => worker.draining);
+  await sendTelegramOutbox(
+    s,
+    fetch,
+    process.env,
+    Date.now,
+    () => worker.draining,
+  );
 });
 const app = express();
 installHealth(app, s, worker);
@@ -37,13 +43,14 @@ app.use((_req, res, next) =>
 app.use(createApp(s));
 let vite: { close: () => Promise<void> } | undefined;
 if (config.production) {
-  app.use(express.static("dist"));
+  app.use(express.static("dist-legacy"));
   app.get("/{*path}", (_req, res) =>
-    res.sendFile("index.html", { root: "dist" }),
+    res.sendFile("index.html", { root: "dist-legacy" }),
   );
 } else {
   const { createServer } = await import("vite");
   const dev = await createServer({
+    mode: "legacy",
     server: { middlewareMode: true },
     appType: "spa",
   });
@@ -53,7 +60,7 @@ if (config.production) {
 }
 s.db
   .prepare(
-    "UPDATE outbox SET status='uncertain',error='Interrupted sender; inspect provider before retrying' WHERE status='sending'",
+    "UPDATE telegram_outbox SET status='uncertain',reason_code='interrupted_send' WHERE status='sending'",
   )
   .run();
 const timer = setInterval(() => {

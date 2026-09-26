@@ -107,3 +107,72 @@ Run npm run test:basic, npm run check, and npm run build. These check
 local code, not Telegram connectivity. The actual webhook and bot response
 require private bot credentials and a deployed HTTPS endpoint. No live
 end-to-end verification is claimed by this source change.
+
+## Administrator bootstrap, sessions, and proxy
+
+The Vercel serverless API proxies same-origin requests to Convex HTTP actions.
+Its allowlist includes login, logout, data, employee, site, Telegram link, and
+redacted operation endpoints. Browser mutations require the matching
+`APP_ORIGIN`. Cookies are Secure, HttpOnly, and SameSite=Strict; opaque
+administrator sessions expire after eight hours. There is no public signup.
+
+After deploying Convex, the owner uses the authenticated Convex Dashboard
+function runner for the **internal** `auth:bootstrapAdmin` action with a
+private email and unique password of 14–128 characters. It refuses if an
+administrator exists, stores a salted scrypt hash, and returns only
+`{created:true}`. An authorized private CLI operator can instead invoke
+`npx convex run --prod auth:bootstrapAdmin` with privately supplied
+arguments. Prefer the Dashboard to avoid shell history. Setting
+`admins.active=false` privately invalidates that administrator's sessions.
+The basic app has no account management or password reset screen.
+
+## Build and deployment context
+
+`CONVEX_DEPLOY_KEY` is a private CLI/build credential, never an application or
+browser variable. The previously configured production-only key has
+`deployment:deploy` permission for the documented Vercel build. This source
+change did not run a cloud deployment or inspect current remote settings.
+The earlier operational handoff recorded Vercel Hobby; confirm an appropriate
+plan before business production use. No billing change was made.
+
+1. Run `npm ci`, `npm run test:basic`, `npm run check`, and `npm run build`
+   locally.
+2. With authorized credentials selecting the intended deployment, run
+   `npx convex deploy` for production or `npx convex dev --once` for
+   development.
+3. Deploy the same source branch to Vercel. The repository build command is
+   `node scripts/vercel-build.ts`, output `dist`, Node 24. In production,
+   that command runs `npx convex deploy --cmd "npm run build"` using the
+   production-only deploy key. Preview/development builds run
+   `npm run build` without deploying Convex.
+4. Check login, session expiry, employee/site CRUD, Telegram linking, webhook,
+   and operations against the intended HTTPS deployment before enabling send.
+
+The committed Convex `_generated` files were produced by the installed
+Convex CLI offline generator. Regenerate with `npx convex codegen` when
+deployment credentials are available; do not hand-edit generated files.
+`npm run dev` previews the basic frontend only. `npx vercel dev` with
+private configuration serves the complete proxy locally; test secure cookies
+on HTTPS. The SQLite server uses `npm run dev:legacy` and
+`npm run build:legacy`, with its own Telegram tables and `dist-legacy` UI.
+
+## Site location map
+
+The site editor uses Leaflet and OpenStreetMap tiles. Click or tap selects a
+point; dragging the marker changes it. The radius input updates the visible
+circle. Existing coordinates retain exact saved values until explicitly
+changed. The Cipolletti/Neuquén starting view is not a selection: a new site
+requires an operator choice. Keyboard users can pan and zoom the map and
+choose its center; a collapsed manual coordinate option is available. Saving
+locks the controls.
+
+Tiles use `https://tile.openstreetmap.org/{z}/{x}/{y}.png`, visible
+attribution, native browser caching, and a
+`strict-origin-when-cross-origin` referrer policy. There is no prefetch,
+geocoding, paid service, key, or device location permission. Tile failure
+preserves selected coordinates and leaves numeric selection available.
+For local browser QA, `npm run dev` serves
+`/tests/fixtures/site-map.html`; that fixture is not emitted to `dist`.
+
+References: [Leaflet](https://leafletjs.com/reference.html),
+[OpenStreetMap tile policy](https://operations.osmfoundation.org/policies/tiles/).

@@ -7,7 +7,7 @@ function setup() {
   const s = new Store(":memory:");
   s.db
     .prepare(
-      "INSERT INTO employees VALUES('e','Employee','5491100000011','Staff','[\"a\",\"b\"]',1)",
+      "INSERT INTO employees VALUES('e','Employee','Staff','[\"a\",\"b\"]',1)",
     )
     .run();
   s.db
@@ -89,13 +89,13 @@ test("delayed live input cannot overlap manual completed visit but historical in
   recordManualVisit(s, input(), "hr");
   const live = {
     id: "live",
-    phone: "5491100000011",
+    employeeId: "e",
     action: "entry",
     siteId: "a",
     lat: 0,
     lon: 0,
     time: "2026-09-01T13:00:00Z",
-    source: "whatsapp",
+    source: "telegram",
   };
   assert.throws(() => applyAction(s, live));
   applyAction(s, { ...live, time: "2026-09-01T14:00:00Z" });
@@ -154,13 +154,13 @@ test("historical gaps remain insertable after newer provider events", () => {
   );
   applyAction(s, {
     id: "recent",
-    phone: "5491100000011",
+    employeeId: "e",
     action: "entry",
     siteId: "b",
     lat: 1,
     lon: 1,
     time: "2026-09-01T16:00:00Z",
-    source: "whatsapp",
+    source: "telegram",
   });
   recordManualVisit(
     s,

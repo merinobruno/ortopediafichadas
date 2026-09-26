@@ -13,9 +13,7 @@ const states = [
   "failed",
   "expired",
   "uncertain",
-  "sent",
-  "delivered",
-  "read",
+  "revoked",
   "recovery_hold",
 ] as const;
 function authorize(user: any) {
@@ -61,10 +59,12 @@ export function listOperations(s: Store, user: any, query: unknown) {
   }
   const extra =
     q.lane === "outbox"
-      ? "t.attempts,t.next_attempt_at,t.window_until,e.name employee_name,"
+      ? "t.attempts,t.next_attempt_at,NULL window_until,e.name employee_name,"
       : "NULL attempts,NULL next_attempt_at,NULL window_until,NULL employee_name,";
+  const identifier = q.lane === "inbox" ? "t.update_id" : "t.id";
+  const created = q.lane === "inbox" ? "t.received_at" : "t.created_at";
   const rows = s.all(
-    `SELECT t.id,t.status,t.created_at,t.error,${extra} COALESCE(r.revision,0) revision,COALESCE(r.state,'unreviewed') review_state,r.actor review_actor,r.reason review_reason,r.created_at reviewed_at FROM ${q.lane} t LEFT JOIN operation_reviews r ON r.lane=? AND r.entity_id=t.id AND r.revision=(SELECT MAX(revision) FROM operation_reviews WHERE lane=? AND entity_id=t.id) ${q.lane === "outbox" ? "LEFT JOIN employees e ON e.phone=t.phone" : ""} WHERE (?='' OR t.status=?) AND (?='' OR COALESCE(r.state,'unreviewed')=?) AND (?='' OR t.created_at<? OR (t.created_at=? AND t.id<?)) ORDER BY t.created_at DESC,t.id DESC LIMIT 26`,
+    `SELECT ${identifier} id,t.status,${created} created_at,t.reason_code error,${extra} COALESCE(r.revision,0) revision,COALESCE(r.state,'unreviewed') review_state,r.actor review_actor,r.reason review_reason,r.created_at reviewed_at FROM telegram_${q.lane} t LEFT JOIN operation_reviews r ON r.lane=? AND r.entity_id=${identifier} AND r.revision=(SELECT MAX(revision) FROM operation_reviews WHERE lane=? AND entity_id=${identifier}) ${q.lane === "outbox" ? "LEFT JOIN employees e ON e.id=t.employee_id" : ""} WHERE (?='' OR t.status=?) AND (?='' OR COALESCE(r.state,'unreviewed')=?) AND (?='' OR ${created}<? OR (${created}=? AND ${identifier}<?)) ORDER BY ${created} DESC,${identifier} DESC LIMIT 26`,
     q.lane,
     q.lane,
     q.status || "",
@@ -86,7 +86,7 @@ export function listOperations(s: Store, user: any, query: unknown) {
     })),
     nextCursor: more
       ? Buffer.from(
-          JSON.stringify({ time: last.created_at, id: last.id }),
+          JSON.stringify({ time: last.created_at, id: String(last.id) }),
         ).toString("base64url")
       : null,
   };
@@ -104,7 +104,12 @@ export function reviewOperation(s: Store, user: any, input: unknown) {
   authorize(user);
   const p = reviewSchema.parse(input);
   return s.tx(() => {
-    if (!s.one(`SELECT id FROM ${p.lane} WHERE id=?`, p.id))
+    if (
+      !s.one(
+        `SELECT 1 FROM telegram_${p.lane} WHERE ${p.lane === "inbox" ? "update_id" : "id"}=?`,
+        p.id,
+      )
+    )
       throw new Error("Registro inexistente.");
     const before = s.one(
       "SELECT * FROM operation_reviews WHERE lane=? AND entity_id=? ORDER BY revision DESC LIMIT 1",
@@ -154,7 +159,7 @@ export function reviewOperation(s: Store, user: any, input: unknown) {
   });
 }
 export function operationRoutes(app: Express, s: Store) {
-  app.get("/api/whatsapp-operations", (req, res, next) => {
+  app.get("/api/telegram-operations", (req, res, next) => {
     try {
       res.setHeader("Cache-Control", "private, no-store");
       res.json(listOperations(s, res.locals.user, req.query));
@@ -162,7 +167,7 @@ export function operationRoutes(app: Express, s: Store) {
       next(e);
     }
   });
-  app.post("/api/whatsapp-operations/review", (req, res, next) => {
+  app.post("/api/telegram-operations/review", (req, res, next) => {
     try {
       res.json(reviewOperation(s, res.locals.user, req.body));
     } catch (e) {

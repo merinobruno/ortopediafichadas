@@ -1,3 +1,4 @@
+import { DomainRejection } from "./domain-rejection";
 import {
   createCatalog,
   listCatalog,
@@ -19,15 +20,17 @@ export function recordBreak(
   return s.tx(() => {
     const t = new Date(time).toISOString();
     if (Date.parse(t) > now)
-      throw new Error("La pausa no puede tener un horario futuro.");
+      throw new DomainRejection("La pausa no puede tener un horario futuro.");
     const visit = s.one(
       "SELECT * FROM visits WHERE employee_id=? AND status='open'",
       employee,
     );
     if (!visit)
-      throw new Error("Necesitás una visita abierta para registrar una pausa.");
+      throw new DomainRejection(
+        "Necesitás una visita abierta para registrar una pausa.",
+      );
     if (Date.parse(t) < Date.parse(visit.entry_at))
-      throw new Error("La pausa debe ser posterior a la entrada.");
+      throw new DomainRejection("La pausa debe ser posterior a la entrada.");
     const open = s.one(
       "SELECT * FROM breaks WHERE visit_id=? AND status='open'",
       visit.id,
@@ -37,7 +40,9 @@ export function recordBreak(
       visit.id,
     );
     if (latest?.time && Date.parse(t) < Date.parse(latest.time))
-      throw new Error("El horario es anterior a una pausa confirmada.");
+      throw new DomainRejection(
+        "El horario es anterior a una pausa confirmada.",
+      );
     let breakId = open?.id;
     if (action === "start") {
       if (
@@ -46,20 +51,24 @@ export function recordBreak(
           visit.id,
         )
       )
-        throw new Error("RRHH debe confirmar el fin de la pausa anterior.");
+        throw new DomainRejection(
+          "RRHH debe confirmar el fin de la pausa anterior.",
+        );
       breakId = randomUUID();
-      if (open) throw new Error("Ya hay una pausa abierta.");
+      if (open) throw new DomainRejection("Ya hay una pausa abierta.");
       s.db
         .prepare("INSERT INTO breaks VALUES(?,?,?,NULL,'open')")
         .run(breakId, visit.id, t);
     } else if (action === "end") {
-      if (!open) throw new Error("No hay una pausa abierta.");
+      if (!open) throw new DomainRejection("No hay una pausa abierta.");
       if (t <= open.started_at)
-        throw new Error("El fin debe ser posterior al inicio de la pausa.");
+        throw new DomainRejection(
+          "El fin debe ser posterior al inicio de la pausa.",
+        );
       s.db
         .prepare("UPDATE breaks SET ended_at=?,status='complete' WHERE id=?")
         .run(t, open.id);
-    } else throw new Error("Acción de pausa inválida.");
+    } else throw new DomainRejection("Acción de pausa inválida.");
     return { ok: true, break_id: breakId };
   });
 }
@@ -69,7 +78,7 @@ export function assignShift(s: Store, employee: string, shift: string) {
     !s.one("SELECT id FROM shifts WHERE id=?", shift) ||
     !catalogActive(s, "shift", shift)
   )
-    throw new Error("Empleado o turno no encontrado.");
+    throw new DomainRejection("Empleado o turno no encontrado.");
   s.db
     .prepare(
       "INSERT INTO shift_assignments VALUES(?,?) ON CONFLICT(employee_id) DO UPDATE SET shift_id=excluded.shift_id",
@@ -84,7 +93,7 @@ export function requestOvertime(
 ) {
   const v = s.one("SELECT * FROM visits WHERE id=?", visit);
   if (!v?.exit_at || !["complete", "corrected"].includes(v.status))
-    throw new Error("Las horas extra requieren una visita completa.");
+    throw new DomainRejection("Las horas extra requieren una visita completa.");
   if (
     !Number.isInteger(minutes) ||
     minutes <= 0 ||
@@ -92,7 +101,7 @@ export function requestOvertime(
       Math.floor((Date.parse(v.exit_at) - Date.parse(v.entry_at)) / 60000) ||
     reason.trim().length < 5
   )
-    throw new Error(
+    throw new DomainRejection(
       "Ingresá minutos válidos y un motivo de al menos 5 caracteres.",
     );
   const id = randomUUID();
@@ -113,7 +122,7 @@ export function decideOvertime(
       id,
     );
     if (!before || !["approved", "rejected"].includes(status))
-      throw new Error("Solicitud inexistente o ya resuelta.");
+      throw new DomainRejection("Solicitud inexistente o ya resuelta.");
     s.db.prepare("UPDATE overtime SET status=? WHERE id=?").run(status, id);
     s.db
       .prepare("INSERT INTO audit VALUES(?,?,?,?,?,?,?)")

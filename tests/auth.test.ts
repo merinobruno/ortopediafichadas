@@ -8,8 +8,10 @@ test("supervisor scope restricts state export mutations and revokes sessions on 
   const s = new Store(":memory:");
   for (const id of ["a", "b"])
     s.db
-      .prepare("INSERT INTO employees VALUES(?,?,?,'Staff','[]',1)")
-      .run(id, id, "549110000000" + (id === "a" ? "1" : "2"));
+      .prepare(
+        "INSERT INTO employees(id,name,role,site_ids,active) VALUES(?,?,'Staff','[]',1)",
+      )
+      .run(id, id);
   const app = createApp(s);
   s.db
     .prepare(
@@ -96,10 +98,7 @@ test("supervisor scope restricts state export mutations and revokes sessions on 
     assert.equal(hr.overtime[0].id, "oa");
     assert.equal((await request("users")).status, 403);
     assert.equal((await request("employees", { id: "b" })).status, 403);
-    assert.equal(
-      (await request("simulate", { phone: "5491100000002" })).status,
-      403,
-    );
+    assert.equal((await request("simulate", { employeeId: "b" })).status, 403);
     assert.equal(
       (await request("hr/assignment", { employee: "b", shift: "unknown" }))
         .status,
@@ -107,7 +106,7 @@ test("supervisor scope restricts state export mutations and revokes sessions on 
     );
     assert.equal((await request("correct", { id: "unknown" })).status, 403);
     for (const [path, body] of [
-      ["simulate", { phone: "5491100000001" }],
+      ["simulate", { employeeId: "a" }],
       ["hr/assignment", { employee: "a", shift: "unknown" }],
       ["hr/break", { employee: "a", action: "start" }],
       ["leaves", { employee_id: "a" }],

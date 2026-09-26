@@ -6,7 +6,7 @@ import { calendar, createSchedule } from "../server/schedules";
 function setup() {
   const s = new Store(":memory:");
   s.db.exec(
-    `INSERT INTO employees VALUES('e','Synthetic','5491100000011','Staff','["a","b"]',1);INSERT INTO sites(id,name,address,lat,lon,radius) VALUES('a','Site A','Address',0,0,100),('b','Site B','Address',1,1,100);INSERT INTO shifts VALUES('m','Morning','09:00','17:00',10),('n','Night','22:00','06:00',5)`,
+    `INSERT INTO employees VALUES('e','Synthetic','Staff','["a","b"]',1);INSERT INTO sites(id,name,address,lat,lon,radius) VALUES('a','Site A','Address',0,0,100),('b','Site B','Address',1,1,100);INSERT INTO shifts VALUES('m','Morning','09:00','17:00',10),('n','Night','22:00','06:00',5)`,
   );
   return s;
 }
@@ -208,7 +208,7 @@ test("planned site is expectation only and all authorized actual sites still wor
     );
     applyAction(s, {
       id: "arrival-b",
-      phone: "5491100000011",
+      employeeId: "e",
       action: "entry",
       siteId: "b",
       lat: 1,
@@ -352,7 +352,7 @@ test("weekly HTTP scopes pagination and history before disclosure and all superv
   process.env.ADMIN_PASSWORD = "Weekly-admin-test-2026";
   const s = setup();
   s.db.exec(
-    "INSERT INTO employees(id,name,phone) VALUES('other','Hidden employee','5491100000022')",
+    "INSERT INTO employees(id,name,role) VALUES('other','Hidden employee','5491100000022')",
   );
   saveWeek(
     s,
@@ -455,7 +455,7 @@ test("week batch employee and cell caps reject atomically and pagination include
     for (let i = 0; i < 51; i++) {
       const id = "person-" + i;
       s.db
-        .prepare("INSERT INTO employees(id,name,phone) VALUES(?,?,?)")
+        .prepare("INSERT INTO employees(id,name,role) VALUES(?,?,?)")
         .run(id, "Synthetic " + String(i).padStart(2, "0"), "5000" + i);
       changes.push({ ...cell("rest"), employee_id: id });
     }

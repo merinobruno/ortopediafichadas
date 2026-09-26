@@ -3,9 +3,9 @@
 ## Platform
 web
 ## Stack
-TypeScript/React basic app on Vercel with Convex backend; retained local Express/SQLite implementation has a separate Telegram migration plan.
+TypeScript/React basic app on Vercel with Convex backend; retained local Express/SQLite implementation independently supports Telegram and has its own legacy UI build.
 ## Users
-HR staff managing employees across multiple sites; the approved Convex/Vercel attendance path uses private Telegram bot chats and native location sharing. The retained SQLite server has a separate migration plan.
+HR staff managing employees across multiple sites; both runtimes use private Telegram bot chats and native location sharing after HR issues a one-time link code. The local server also supports HR operations and an isolated simulator.
 ## Product Purpose
 Record every visit, keep exceptions visible, and eliminate manual attendance transcription.
 ## Capabilities and Constraints

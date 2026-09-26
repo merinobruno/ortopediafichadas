@@ -1,3 +1,4 @@
+import { DomainRejection } from "./domain-rejection";
 import { randomUUID } from "node:crypto";
 import { Store } from "./store";
 import { applyAction, distance } from "./domain";
@@ -5,10 +6,22 @@ import { recordBreak } from "./hr";
 import { createLeaveRequest } from "./leaves";
 export const BOT_HELP =
   "Enviá entrada o salida y luego compartí tu ubicación actual. Para registrar pausas: pausa / finpausa. Para pedir una licencia: solicitar licencia DD/MM/YYYY DD/MM/YYYY | Tipo | Motivo (al menos 5 caracteres). La solicitud queda pendiente de RRHH. Enviá cancelar para descartar sólo una fichada pendiente, o ayuda para ver estas instrucciones.";
-type Source = "whatsapp" | "simulator";
+type Source = "telegram" | "simulator";
+export type BotMessage = {
+  id: string;
+  employeeId: string;
+  timestamp: number;
+  kind: "text" | "location";
+  text?: string;
+  latitude?: number;
+  longitude?: number;
+};
+export type BotContent =
+  | { kind: "text"; text: string }
+  | { kind: "location"; latitude: number; longitude: number };
 export function receiveEmployeeMessage(
   s: Store,
-  m: any,
+  m: BotMessage,
   source: Source,
   now = Date.now(),
   actor?: string,
@@ -16,17 +29,20 @@ export function receiveEmployeeMessage(
 ) {
   return s.tx(() => {
     const employee = s.one(
-      "SELECT * FROM employees WHERE phone=? AND active=1",
-      m.from,
+      "SELECT * FROM employees WHERE id=? AND active=1",
+      m.employeeId,
     );
-    if (!employee) throw new Error("Número no registrado. Contactá a RRHH.");
-    const eventMs = Number(m.timestamp) * 1000;
+    if (!employee)
+      throw new DomainRejection(
+        "Empleado no registrado o inactivo. Contactá a RRHH.",
+      );
+    const eventMs = m.timestamp;
     if (
       !Number.isFinite(eventMs) ||
       eventMs > now ||
       now - eventMs > 15 * 60000
     )
-      throw new Error(
+      throw new DomainRejection(
         "Mensaje fuera de tiempo. Contactá a RRHH para revisar el horario.",
       );
     const existing = s.one(
@@ -35,18 +51,23 @@ export function receiveEmployeeMessage(
     );
     if (existing) {
       if (existing.employee_id !== employee.id || existing.source !== source)
-        throw new Error("Identidad de mensaje inválida.");
+        throw new DomainRejection("Identidad de mensaje inválida.");
       return existing.reply as string;
     }
     const time = new Date(eventMs).toISOString(),
-      text = String(m.text?.body || "").trim(),
+      text = String(m.text || "").trim(),
       word = text.toLowerCase(),
-      pendingKey = source === "simulator" ? "simulator:" + m.from : m.from;
-    const saved = s.one("SELECT * FROM pending WHERE phone=?", pendingKey),
-      pending = saved && Date.parse(saved.expires_at) >= now ? saved : null;
+      pendingKey = source + ":" + employee.id;
+    const saved = s.one("SELECT * FROM bot_pending WHERE key=?", pendingKey),
+      pending =
+        saved &&
+        Date.parse(saved.expires_at) >= eventMs &&
+        eventMs >= Date.parse(saved.expires_at) - 300000
+          ? saved
+          : null;
     const location =
-      m.type === "location"
-        ? { ...m.location, eventTime: time }
+      m.kind === "location"
+        ? { latitude: m.latitude, longitude: m.longitude, eventTime: time }
         : pending?.location_json
           ? JSON.parse(pending.location_json)
           : null;
@@ -62,13 +83,13 @@ export function receiveEmployeeMessage(
           )
       : [];
     const exact =
-      m.type === "text" && pending?.location_json
+      m.kind === "text" && pending?.location_json
         ? matches.find((x) => x.name.toLowerCase() === word || x.id === word)
         : null;
     const complete = (siteId?: string) => {
       const result = applyAction(s, {
         id: m.id,
-        phone: m.from,
+        employeeId: employee.id,
         action: pending.action,
         siteId,
         lat: location.latitude,
@@ -76,24 +97,24 @@ export function receiveEmployeeMessage(
         time: location.eventTime,
         source,
       });
-      s.db.prepare("DELETE FROM pending WHERE phone=?").run(pendingKey);
+      s.db.prepare("DELETE FROM bot_pending WHERE key=?").run(pendingKey);
       return result.message;
     };
     let reply = BOT_HELP;
     if (exact) reply = complete(exact.id);
-    else if (m.type === "text" && word === "ayuda") reply = BOT_HELP;
-    else if (m.type === "text" && word === "cancelar") {
-      s.db.prepare("DELETE FROM pending WHERE phone=?").run(pendingKey);
+    else if (m.kind === "text" && word === "ayuda") reply = BOT_HELP;
+    else if (m.kind === "text" && word === "cancelar") {
+      s.db.prepare("DELETE FROM bot_pending WHERE key=?").run(pendingKey);
       reply =
         "Se descartó la intención de fichada pendiente. No se modificaron visitas, pausas ni licencias.";
     } else if (
-      m.type === "text" &&
+      m.kind === "text" &&
       (word === "pausa" ||
         word === "finpausa" ||
         word.startsWith("solicitar licencia"))
     ) {
       if (pending)
-        throw new Error(
+        throw new DomainRejection(
           "Primero completá la fichada pendiente con tu ubicación o elegí la sede. Enviá cancelar para descartarla.",
         );
       if (word === "pausa" || word === "finpausa") {
@@ -130,7 +151,7 @@ export function receiveEmployeeMessage(
             text,
           );
         if (!parts)
-          throw new Error(
+          throw new DomainRejection(
             "Usá: solicitar licencia DD/MM/YYYY DD/MM/YYYY | Tipo | Motivo.",
           );
         createLeaveRequest(
@@ -150,36 +171,37 @@ export function receiveEmployeeMessage(
           "Solicitud de licencia registrada como pendiente. RRHH debe revisarla; todavía no está aprobada.";
       }
     } else if (
-      m.type === "location" ||
-      (m.type === "text" && pending?.location_json)
+      m.kind === "location" ||
+      (m.kind === "text" && pending?.location_json)
     ) {
       if (!pending)
-        throw new Error(
+        throw new DomainRejection(
           "Primero enviá entrada o salida y luego compartí tu ubicación.",
         );
       if (matches.length > 1 && !exact) {
         s.db
-          .prepare("UPDATE pending SET location_json=? WHERE phone=?")
+          .prepare("UPDATE bot_pending SET location_json=? WHERE key=?")
           .run(JSON.stringify(location), pendingKey);
         reply =
           "Hay varias sedes en esta ubicación. Respondé con el nombre exacto: " +
           matches.map((x) => x.name).join(", ") +
           ".";
-      } else if (m.type === "text")
+      } else if (m.kind === "text")
         reply = "Elegí el nombre exacto de la sede o enviá cancelar.";
       else reply = complete(matches[0]?.id);
     } else if (
-      m.type === "text" &&
+      m.kind === "text" &&
       ["presente", "entrada", "salida"].includes(word)
     ) {
       s.db
         .prepare(
-          "INSERT INTO pending(phone,action,expires_at,location_json) VALUES(?,?,?,NULL) ON CONFLICT(phone) DO UPDATE SET action=excluded.action,expires_at=excluded.expires_at,location_json=NULL",
+          "INSERT INTO bot_pending(key,employee_id,action,expires_at,location_json) VALUES(?,?,?,?,NULL) ON CONFLICT(key) DO UPDATE SET action=excluded.action,expires_at=excluded.expires_at,location_json=NULL",
         )
         .run(
           pendingKey,
+          employee.id,
           word === "salida" ? "exit" : "entry",
-          new Date(now + 5 * 60000).toISOString(),
+          new Date(eventMs + 5 * 60000).toISOString(),
         );
       reply =
         "Compartí tu ubicación actual para confirmar la fichada. Tenés 5 minutos.";
@@ -193,7 +215,7 @@ export function receiveEmployeeMessage(
         employee.id,
         time,
         source,
-        m.type === "text" ? text : "[location]",
+        m.kind === "text" ? text : "[location]",
         reply,
         receivedAt,
       );
@@ -202,44 +224,40 @@ export function receiveEmployeeMessage(
 }
 export function simulateEmployeeText(
   s: Store,
-  phone: string,
+  employeeId: string,
   text: string,
   actor: string,
   now = Date.now(),
 ) {
   return simulateEmployeeMessage(
     s,
-    phone,
-    { type: "text", text: { body: text } },
+    employeeId,
+    { kind: "text", text },
     actor,
     now,
   );
 }
+
 export function simulateEmployeeMessage(
   s: Store,
-  phone: string,
-  content: {
-    type: string;
-    text?: { body: string };
-    location?: { latitude: number; longitude: number };
-  },
+  employeeId: string,
+  content: BotContent,
   actor: string,
   now = Date.now(),
 ) {
-  const text =
-    content.type === "text" ? content.text?.body || "" : "[Ubicación simulada]";
+  const employee = s.one(
+    "SELECT id FROM employees WHERE id=? AND active=1",
+    employeeId,
+  );
+  if (!employee) throw new DomainRejection("Elegí un empleado activo.");
+  const id = "simulator:" + randomUUID();
+  const text = content.kind === "text" ? content.text : "[Ubicación simulada]";
   return s.tx(() => {
-    const employee = s.one(
-      "SELECT id FROM employees WHERE phone=? AND active=1",
-      phone,
-    );
-    if (!employee) throw new Error("Elegí un empleado activo.");
-    const id = "simulator:" + randomUUID();
     try {
       return {
         message: receiveEmployeeMessage(
           s,
-          { ...content, id, from: phone, timestamp: String(now / 1000) },
+          { ...content, id, employeeId, timestamp: now },
           "simulator",
           now,
           actor,
@@ -255,7 +273,7 @@ export function simulateEmployeeMessage(
         )
         .run(
           id,
-          employee.id,
+          employeeId,
           new Date(now).toISOString(),
           "simulator",
           text,

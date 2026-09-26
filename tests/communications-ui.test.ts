@@ -23,7 +23,7 @@ test("communication editor and navigation stay disabled until the saved revision
     preparation_id: null,
     document: {
       type: "circular",
-      channel: "whatsapp",
+      channel: "telegram",
       requires_signature: false,
       subject: "Saved subject",
       body: "Saved body",
@@ -83,7 +83,7 @@ test("communication editor and navigation stay disabled until the saved revision
           campaign_id: "c",
           revision: 2,
           recipients: [],
-          channel: "whatsapp",
+          channel: "telegram",
           requires_signature: false,
         }),
       ),

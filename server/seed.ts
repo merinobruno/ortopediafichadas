@@ -47,14 +47,10 @@ export function seed(s: Store) {
     ];
     people.forEach(([name, role], i) =>
       s.db
-        .prepare("INSERT INTO employees VALUES(?,?,?,?,?,1)")
-        .run(
-          "demo-" + i,
-          name,
-          "54911000000" + String(i + 10),
-          role,
-          '["centro","palermo","deposito"]',
-        ),
+        .prepare(
+          "INSERT INTO employees(id,name,role,site_ids,active) VALUES(?,?,?,?,1)",
+        )
+        .run("demo-" + i, name, role, '["centro","palermo","deposito"]'),
     );
     const now = new Date();
     const at = (days: number, hours: number) => {

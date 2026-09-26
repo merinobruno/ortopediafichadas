@@ -16,7 +16,7 @@ const setup = () => {
     .run();
   s.db
     .prepare(
-      "INSERT INTO employees(id,name,phone,role,site_ids) VALUES('e','Ana','5491100000001','Staff','[\"a\"]')",
+      "INSERT INTO employees(id,name,role,site_ids) VALUES('e','Ana','Staff','[\"a\"]')",
     )
     .run();
   s.db

@@ -13,7 +13,7 @@ test("report summary and both CSV exports share validated filters and supervisor
     .run();
   s.db
     .prepare(
-      "INSERT INTO employees VALUES('e','Alice','5491100000011','Staff','[\"a\",\"b\"]',1),('private','Private person','5491100000012','Staff','[\"a\"]',1)",
+      "INSERT INTO employees VALUES('e','Alice','Staff','[\"a\",\"b\"]',1),('private','Private person','Staff','[\"a\"]',1)",
     )
     .run();
   s.db

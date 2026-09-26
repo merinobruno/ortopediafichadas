@@ -35,6 +35,10 @@ send enablement. All Step 5 commits are intentionally pending the parent
 integrated delivery; no live database mutation, deployment, or external
 message was performed.
 
+## Delivery record
+
+The five planned per-task commits were consolidated into verified complete-runtime commit `f5e154f`. The checked commit steps refer to that single commit. Live Telegram setup, private cleanup and deployment remain pending.
+
 ## Global Constraints
 
 - A Telegram **private** chat and stable numeric `from.id` identify the employee; username, contact and phone never do.
@@ -93,7 +97,7 @@ const codeHash = await sha256(code);
 ```
 
 - [x] **Step 4: Confirm green.** Run `npx vitest run convex/telegramLinks.test.ts convex/backend.test.ts` and `npm run check`; expect all new cases to pass. Existing phone-based employee and bot paths remain until Task 3 changes them together.
-- [ ] **Step 5: Commit.** Stage only Task 1 paths and run `git commit -m "feat: add Telegram employee linking"`.
+- [x] **Step 5: Commit.** Stage only Task 1 paths and run `git commit -m "feat: add Telegram employee linking"`.
 
 ### Task 2: Verified Telegram ingress
 
@@ -117,7 +121,7 @@ const event: TelegramEvent = { updateId: input.update_id, messageId: m.message_i
 ```
 
 - [x] **Step 4: Confirm green.** Run `npx vitest run convex/telegramUpdate.test.ts convex/http.test.ts` and `npm run check`; expect accepted updates to persist once, invalid requests to leave inbox empty.
-- [ ] **Step 5: Commit.** Stage only Task 2 paths and run `git commit -m "feat: accept verified Telegram updates"`.
+- [x] **Step 5: Commit.** Stage only Task 2 paths and run `git commit -m "feat: accept verified Telegram updates"`.
 
 ### Task 3: Linked attendance processing
 
@@ -143,7 +147,7 @@ for (const row of ordered) await processOne(ctx,row);
 ```
 
 - [x] **Step 4: Confirm green.** Run `npx vitest run convex/telegramMessages.test.ts convex/backend.test.ts convex/core.test.ts` and `npm run check`; expect all domain and ordering cases to pass.
-- [ ] **Step 5: Commit.** Stage only Task 3 paths and run `git commit -m "feat: process linked Telegram attendance"`.
+- [x] **Step 5: Commit.** Stage only Task 3 paths and run `git commit -m "feat: process linked Telegram attendance"`.
 
 ### Task 4: Telegram replies and uncertain-send safety
 
@@ -166,7 +170,7 @@ const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`,
 ```
 
 - [x] **Step 4: Confirm green.** Run `npx vitest run convex/telegramSend.test.ts convex/telegramMessages.test.ts` and `npm run check`; expect no duplicate send after uncertainty.
-- [ ] **Step 5: Commit.** Stage only Task 4 paths and run `git commit -m "feat: send guarded Telegram confirmations"`.
+- [x] **Step 5: Commit.** Stage only Task 4 paths and run `git commit -m "feat: send guarded Telegram confirmations"`.
 
 ### Task 5: HR interface, cutover, and full Convex proof
 
@@ -190,4 +194,4 @@ setVisibleCode({ employeeId: employee._id, code: issued.code, expiresAt: issued.
 ```
 
 - [x] **Step 4: Verify the independent deliverable.** Run `npm run test:basic`, `npm run check`, and `npm run build`; expect all pass. Run a focused repository search for active `WHATSAPP_`, `WhatsApp`, `Meta`, and `phone` references in `convex/`, `src/BasicApp.tsx`, and `docs/BASIC-CONVEX.md`; only explicitly historical text may remain. With nonproduction bot credentials, register the webhook and perform private linking, command, location, reply, duplicate-update, and revoked-link checks; record that live check as pending if credentials are unavailable rather than claiming it passed.
-- [ ] **Step 5: Commit.** Stage only Task 5 paths and run `git commit -m "feat: complete Telegram Convex cutover"`.
+- [x] **Step 5: Commit.** Stage only Task 5 paths and run `git commit -m "feat: complete Telegram Convex cutover"`.

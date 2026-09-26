@@ -41,11 +41,11 @@ export default function BotSimulator({
           body: JSON.stringify(
             location
               ? {
-                  phone: employee.phone,
+                  employeeId: employee.id,
                   latitude: site?.lat,
                   longitude: site?.lon,
                 }
-              : { phone: employee.phone, text },
+              : { employeeId: employee.id, text },
           ),
         },
       );
@@ -65,7 +65,7 @@ export default function BotSimulator({
       <h2>Conversación de prueba local</h2>
       <p>
         Usá el empleado y la sede seleccionados en «Prepará una fichada». Esta
-        conversación tiene intenciones separadas de WhatsApp y nunca genera
+        conversación tiene intenciones separadas de Telegram y nunca genera
         mensajes para enviar.
       </p>
       <p>

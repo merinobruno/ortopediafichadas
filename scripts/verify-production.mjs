@@ -8,7 +8,12 @@ const root = resolve("."),
   fixture = mkdtempSync(join(tmpdir(), "carahue-production-"));
 let child;
 try {
-  for (const file of ["package.json", "package-lock.json", "build", "dist"])
+  for (const file of [
+    "package.json",
+    "package-lock.json",
+    "build",
+    "dist-legacy",
+  ])
     cpSync(join(root, file), join(fixture, file), { recursive: true });
   const install = spawnSync(
     process.platform === "win32" ? "npm.cmd" : "npm",
@@ -36,7 +41,7 @@ try {
       DATABASE_PATH: join(fixture, "nested", "db.sqlite"),
       DEMO_MODE: "false",
       ADMIN_PASSWORD: "Isolated-runtime-proof-123",
-      WHATSAPP_SEND_ENABLED: "false",
+      TELEGRAM_SEND_ENABLED: "false",
     },
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
@@ -126,7 +131,6 @@ try {
   });
   const employee = await postFixture("/api/employees", {
     name: "Synthetic report employee",
-    phone: "5491100000098",
     role: "Staff",
     site_ids: [site.id],
     active: 1,
@@ -185,12 +189,9 @@ try {
       ADMIN_PASSWORD: "Isolated-runtime-proof-123",
       DATABASE_PATH: restored,
       DEMO_MODE: "false",
-      WHATSAPP_SEND_ENABLED: "true",
-      WHATSAPP_ACCESS_TOKEN: "synthetic",
-      WHATSAPP_PHONE_NUMBER_ID: "123",
-      WHATSAPP_API_VERSION: "v23.0",
-      WHATSAPP_APP_SECRET: "synthetic",
-      WHATSAPP_VERIFY_TOKEN: "synthetic",
+      TELEGRAM_SEND_ENABLED: "true",
+      TELEGRAM_BOT_TOKEN: "synthetic",
+      TELEGRAM_WEBHOOK_SECRET: "synthetic",
     },
   });
   if (
