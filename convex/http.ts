@@ -4,6 +4,7 @@ import { internal } from "./_generated/api";
 import { z } from "zod";
 import { parseTelegramUpdate, linkCodeFromText } from "./telegramUpdate";
 import { sha256 } from "./telegramLinks";
+import { verifyTelegramInitData } from "./telegramPhoneAuth";
 const http = httpRouter();
 const json = (
   value: unknown,
@@ -50,6 +51,84 @@ const apiHandler = httpAction(async (ctx, request) => {
       ?.slice("attendance_session=".length) ?? "";
   const sessionHash = await hash(token);
   try {
+    if (path === "/api/phone/challenge" && request.method === "POST") {
+      const botToken = process.env.TELEGRAM_BOT_TOKEN;
+      if (!botToken)
+        return json({ error: "El servicio no está disponible." }, 503);
+      const body = z
+        .object({
+          initData: z.string().min(1).max(4096),
+          kind: z.enum(["entrada", "salida"]),
+        })
+        .strict()
+        .parse(await request.json());
+      let userId: string;
+      try {
+        userId = await verifyTelegramInitData(body.initData, botToken);
+      } catch {
+        return json({ error: "Abrí Fichar desde Telegram nuevamente." }, 401);
+      }
+      const bytes = crypto.getRandomValues(new Uint8Array(32));
+      const challenge = Array.from(bytes, (byte) =>
+        byte.toString(16).padStart(2, "0"),
+      ).join("");
+      const result = await ctx.runMutation(
+        internal.telegramPhone.issueChallenge,
+        {
+          userId,
+          digest: await sha256(challenge),
+          kind: body.kind,
+          now: Date.now(),
+        },
+      );
+      return result.ok
+        ? json({
+            ok: true,
+            challenge,
+            expiresAt: result.expiresAt,
+            employeeName: result.employeeName,
+          })
+        : json(
+            {
+              error:
+                "Tu cuenta de Telegram no está vinculada a un empleado activo.",
+            },
+            403,
+          );
+    }
+    if (path === "/api/phone/submit" && request.method === "POST") {
+      const botToken = process.env.TELEGRAM_BOT_TOKEN;
+      if (!botToken)
+        return json({ error: "El servicio no está disponible." }, 503);
+      const body = z
+        .object({
+          initData: z.string().min(1).max(4096),
+          challenge: z.string().regex(/^[0-9a-f]{64}$/),
+          latitude: z.number(),
+          longitude: z.number(),
+          accuracy: z.number(),
+        })
+        .strict()
+        .parse(await request.json());
+      let userId: string;
+      try {
+        userId = await verifyTelegramInitData(body.initData, botToken);
+      } catch {
+        return json({ error: "Abrí Fichar desde Telegram nuevamente." }, 401);
+      }
+      const result = await ctx.runMutation(
+        internal.telegramPhone.submitChallenge,
+        {
+          userId,
+          digest: await sha256(body.challenge),
+          latitude: body.latitude,
+          longitude: body.longitude,
+          accuracy: body.accuracy,
+          now: Date.now(),
+        },
+      );
+      return result.ok ? json(result) : json({ error: result.reason }, 409);
+    }
     if (path === "/api/login" && request.method === "POST") {
       const { email, password } = z
         .object({ email: z.string().max(254), password: z.string().max(128) })

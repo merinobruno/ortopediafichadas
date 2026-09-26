@@ -7,6 +7,8 @@ import { join, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import issueRoute from "../../api/employees/link-code";
 import revokeRoute from "../../api/employees/revoke-link";
+import phoneChallengeRoute from "../../api/phone/challenge";
+import phoneSubmitRoute from "../../api/phone/submit";
 import operationsRoute from "../../api/[...path]";
 
 afterEach(() => {
@@ -17,6 +19,8 @@ afterEach(() => {
 it.each([
   ["/api/employees/link-code", issueRoute],
   ["/api/employees/revoke-link", revokeRoute],
+  ["/api/phone/challenge", phoneChallengeRoute],
+  ["/api/phone/submit", phoneSubmitRoute],
 ] as const)(
   "serves nested route %s through the authenticated proxy",
   async (path, route) => {
@@ -95,6 +99,8 @@ it("loads emitted nested functions with native Node ESM resolution", async () =>
         "api/[...path].ts",
         "api/employees/link-code.ts",
         "api/employees/revoke-link.ts",
+        "api/phone/challenge.ts",
+        "api/phone/submit.ts",
       ],
       outbase: "api",
       outdir: directory,
@@ -103,8 +109,13 @@ it("loads emitted nested functions with native Node ESM resolution", async () =>
       format: "esm",
       logLevel: "silent",
     });
-    for (const name of ["link-code", "revoke-link"]) {
-      const url = pathToFileURL(join(directory, "employees", `${name}.js`));
+    for (const path of [
+      "employees/link-code",
+      "employees/revoke-link",
+      "phone/challenge",
+      "phone/submit",
+    ]) {
+      const url = pathToFileURL(join(directory, `${path}.js`));
       execFileSync(process.execPath, [
         "--input-type=module",
         "-e",

@@ -113,7 +113,19 @@ export const sendTelegram = internalAction({
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chat_id: row.chatId, text: row.text }),
+          body: JSON.stringify({
+            chat_id: row.chatId,
+            text: row.text,
+            ...(row.webAppUrl
+              ? {
+                  reply_markup: {
+                    inline_keyboard: [
+                      [{ text: "Fichar", web_app: { url: row.webAppUrl } }],
+                    ],
+                  },
+                }
+              : {}),
+          }),
           signal: AbortSignal.timeout(15000),
         },
       );

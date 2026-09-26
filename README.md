@@ -40,7 +40,8 @@ For a production-shaped local-server run, build with `npm run build:legacy` firs
 
 Set `TELEGRAM_WEBHOOK_SECRET` and register the HTTPS `/webhook/telegram` callback with Telegram `setWebhook` and its `secret_token`. Only original private messages with matching numeric sender/chat IDs enter the durable inbox. HR issues a single-use 10-character code valid for 15 minutes; the employee sends `/start CODE` in a private bot chat. Codes are hashed before durable insertion. Link revocation and employee deactivation block queued work, including after relinking to the same account.
 
-The worker runs every two seconds. Inbox, pending intent, attendance, result and reply queue writes share a transaction. `TELEGRAM_SEND_ENABLED=true` also requires `TELEGRAM_BOT_TOKEN` and the webhook secret. Only confirmed Telegram `sendMessage` success is accepted; explicit proved-unsent 429 responses retry with bounded backoff. Timeout, 5xx, malformed success and interrupted sends require operator review and are never blindly resent. Secrets stay server-side. See [the Convex guide](docs/BASIC-CONVEX.md) for the separate cloud deployment.
+The worker runs every two seconds. Telegram chat locations cannot create attendance in either runtime. The cloud bot replies with an inline **Fichar** button for the employee phone page; the retained local simulator remains separate. `TELEGRAM_SEND_ENABLED=true` also requires `TELEGRAM_BOT_TOKEN` and the webhook secret. Only confirmed Telegram `sendMessage` success is accepted; explicit proved-unsent 429 responses retry with bounded backoff. Timeout, 5xx, malformed success and interrupted sends require operator review and are never blindly resent. Secrets stay server-side. See [the Convex guide](docs/BASIC-CONVEX.md) for the cloud flow and its location trust limits.
+
 ## Security and operational limits
 
 Individual accounts use salted scrypt password hashes. Admin manages accounts and global operation; HR operates globally but cannot manage accounts; supervisors read assigned employees and approve/reject only their leave/overtime. Every other supervisor mutation is forbidden server-side. PostgreSQL migration, retention tooling, monitoring, backups/restore testing and 24/7 hosting remain required before real employee rollout. Use only one application process and one local database file; do not deploy SQLite on a shared network volume. Location sharing supplies coordinates, not proof against spoofing.
@@ -86,7 +87,6 @@ Detail CSV and group summary CSV use the same applied filters as the JSON report
 ## Operations preparation
 
 The legacy build produces a runtime-only server, operator CLI and separate `dist-legacy` UI. See [the operations runbook](docs/OPERATIONS.md) for configuration, health, graceful shutdown, consistent backups, new-path restoration and replay quarantine. This does not activate hosting or Telegram. Run `node scripts/verify-production.mjs` after building to rehearse an isolated runtime-only installation.
-
 
 ## Attendance exception rules
 

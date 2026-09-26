@@ -46,6 +46,37 @@ it("records a confirmed Telegram provider message id", async () => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
 });
+it("sends the trusted inline Fichar Web App button", async () => {
+  const { t, id } = await prepared();
+  await t.run((ctx) =>
+    ctx.db.patch(id, { webAppUrl: "https://attendance.example/fichar.html" }),
+  );
+  vi.stubEnv("TELEGRAM_SEND_ENABLED", "true");
+  vi.stubEnv("TELEGRAM_BOT_TOKEN", "test-token");
+  const send = vi.fn(async (_url: string, options: RequestInit) => {
+    expect(JSON.parse(String(options.body))).toMatchObject({
+      chat_id: "8",
+      text: "Confirmado",
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: "Fichar",
+              web_app: { url: "https://attendance.example/fichar.html" },
+            },
+          ],
+        ],
+      },
+    });
+    return Response.json({ ok: true, result: { message_id: 42 } });
+  });
+  vi.stubGlobal("fetch", send);
+  await t.action(internal.telegramSend.sendTelegram, { id });
+  expect(send).toHaveBeenCalledOnce();
+  expect((await t.run((ctx) => ctx.db.get(id)))?.status).toBe("sent");
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
 it("keeps malformed success and network uncertainty for review without a second send", async () => {
   const { t, id } = await prepared();
   vi.stubEnv("TELEGRAM_SEND_ENABLED", "true");

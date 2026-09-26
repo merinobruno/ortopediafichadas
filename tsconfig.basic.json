@@ -5,6 +5,8 @@
     "convex",
     "api",
     "src/BasicApp.tsx",
+    "src/FicharApp.tsx",
+    "src/FicharApp.test.tsx",
     "src/BasicApp.test.tsx",
     "tests/basic",
     "vitest.config.ts"

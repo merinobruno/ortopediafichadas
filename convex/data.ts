@@ -115,7 +115,14 @@ export const saveEmployee = internalMutation({
           .query("telegramLinks")
           .withIndex("employee", (q) => q.eq("employeeId", id))
           .first();
-        if (link) await ctx.db.delete(link._id);
+        if (link) {
+          for (const challenge of await ctx.db
+            .query("telegramPhoneChallenges")
+            .withIndex("link", (q) => q.eq("linkId", link._id))
+            .collect())
+            await ctx.db.delete(challenge._id);
+          await ctx.db.delete(link._id);
+        }
         for (const code of await ctx.db
           .query("telegramCodes")
           .withIndex("employee", (q) => q.eq("employeeId", id))

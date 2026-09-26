@@ -4,6 +4,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import schema from "./schema";
 import { internal } from "./_generated/api";
 import { sha256 } from "./telegramLinks";
+import { createHmac } from "node:crypto";
 const modules = import.meta.glob("./**/*.ts");
 afterEach(() => vi.unstubAllEnvs());
 const update = {
@@ -164,4 +165,83 @@ it("keeps secure cookie login and authenticated reads", async () => {
   });
   expect(data.status).toBe(200);
   expect(JSON.stringify(await data.json())).not.toContain("passwordHash");
+});
+
+it("serves phone check-in without an admin cookie only for signed linked Telegram users", async () => {
+  vi.stubEnv("PROXY_SECRET", "trusted");
+  vi.stubEnv("APP_ORIGIN", "https://attendance.example");
+  vi.stubEnv("TELEGRAM_BOT_TOKEN", "test-token");
+  const t = convexTest(schema, modules);
+  const employeeId = await t.run((ctx) =>
+    ctx.db.insert("employees", { name: "Ana", active: true }),
+  );
+  await t.run((ctx) =>
+    ctx.db.insert("telegramLinks", {
+      employeeId,
+      userId: "8",
+      chatId: "8",
+      createdAt: Date.now(),
+    }),
+  );
+  await t.run((ctx) =>
+    ctx.db.insert("sites", {
+      name: "Central",
+      latitude: -34.6,
+      longitude: -58.4,
+      radius: 100,
+      active: true,
+    }),
+  );
+  const authDate = Math.floor(Date.now() / 1000);
+  const user = JSON.stringify({ id: 8, first_name: "Ana" });
+  const check = `auth_date=${authDate}\nuser=${user}`;
+  const secret = createHmac("sha256", "WebAppData")
+    .update("test-token")
+    .digest();
+  const hash = createHmac("sha256", secret).update(check).digest("hex");
+  const initData = `auth_date=${authDate}&user=${encodeURIComponent(user)}&hash=${hash}`;
+  const headers = {
+    "x-proxy-secret": "trusted",
+    origin: "https://attendance.example",
+  };
+  const request = (path: string, body: object, requestHeaders = headers) =>
+    t.fetch(path, {
+      method: "POST",
+      headers: requestHeaders,
+      body: JSON.stringify(body),
+    });
+  expect(
+    (
+      await request(
+        "/api/phone/challenge",
+        { initData, kind: "entrada" },
+        { ...headers, origin: "https://evil.example" },
+      )
+    ).status,
+  ).toBe(403);
+  expect(
+    (
+      await request("/api/phone/challenge", {
+        initData: initData.replace("Ana", "Eve"),
+        kind: "entrada",
+      })
+    ).status,
+  ).toBe(401);
+  const issued = await request("/api/phone/challenge", {
+    initData,
+    kind: "entrada",
+  });
+  expect(issued.status).toBe(200);
+  const challenge = (await issued.json()).challenge;
+  const submitted = await request("/api/phone/submit", {
+    initData,
+    challenge,
+    latitude: -34.6,
+    longitude: -58.4,
+    accuracy: 12,
+  });
+  expect(submitted.status).toBe(200);
+  expect(
+    await t.run((ctx) => ctx.db.query("attendance").collect()),
+  ).toHaveLength(1);
 });

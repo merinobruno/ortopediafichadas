@@ -31,7 +31,7 @@ function fixture() {
   return s;
 }
 
-test("committed equal-second command and location process once even when location arrived first", () => {
+test("committed equal-second command and manual pin never record attendance", () => {
   const s = fixture();
   try {
     const now = Math.floor(Date.now() / 1000) * 1000;
@@ -66,7 +66,7 @@ test("committed equal-second command and location process once even when locatio
     );
     processTelegramInbox(s, () => now + 1000);
     processTelegramInbox(s, () => now + 1000);
-    assert.equal(s.all("SELECT * FROM visits").length, 1);
+    assert.equal(s.all("SELECT * FROM visits").length, 0);
     assert.equal(s.all("SELECT * FROM telegram_outbox").length, 2);
     assert.equal(
       s.all("SELECT * FROM telegram_inbox WHERE status='processed'").length,
@@ -130,7 +130,7 @@ test("simulator uses employee ID without provider inbox or outbox", () => {
   }
 });
 
-test("domain rejections do not poison sender queue; later valid attendance succeeds", () => {
+test("invalid leave does not poison sender queue; chat pin cannot record attendance", () => {
   const s = fixture();
   try {
     const now = Math.floor(Date.now() / 1000) * 1000;
@@ -167,16 +167,16 @@ test("domain rejections do not poison sender queue; later valid attendance succe
       s
         .all("SELECT update_id,status FROM telegram_inbox ORDER BY update_id")
         .map((x) => x.status),
-      ["rejected", "rejected", "processed", "processed"],
+      ["rejected", "processed", "processed", "processed"],
     );
-    assert.equal(s.all("SELECT * FROM visits").length, 1);
+    assert.equal(s.all("SELECT * FROM visits").length, 0);
     assert.equal(s.all("SELECT * FROM telegram_outbox").length, 4);
   } finally {
     s.db.close();
   }
 });
 
-test("reply persistence failure rolls back attendance and sender intent, then replays once", () => {
+test("reply persistence failure rolls back sender state and replays without attendance", () => {
   const s = fixture();
   try {
     const now = Math.floor(Date.now() / 1000) * 1000;
@@ -227,7 +227,7 @@ test("reply persistence failure rolls back attendance and sender intent, then re
     s.db.exec("DROP TRIGGER fail_reply");
     processTelegramInbox(s, () => now + 1000);
     processTelegramInbox(s, () => now + 1000);
-    assert.equal(s.one("SELECT COUNT(*) n FROM visits").n, 1);
+    assert.equal(s.one("SELECT COUNT(*) n FROM visits").n, 0);
     assert.equal(s.one("SELECT COUNT(*) n FROM employee_bot_results").n, 2);
     assert.equal(s.one("SELECT COUNT(*) n FROM telegram_outbox").n, 2);
     assert.equal(

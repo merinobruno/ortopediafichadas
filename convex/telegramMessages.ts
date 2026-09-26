@@ -1,7 +1,6 @@
 import { internalMutation } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
-import { decideAttendance } from "./core";
 import { consumeLinkCode } from "./telegramLinks";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -19,6 +18,24 @@ const translations: Record<string, string> = {
     "Estás fuera del radio de las sedes activas.",
 };
 class AttendanceRejection extends Error {}
+
+function webAppUrl() {
+  const configured = process.env.APP_ORIGIN;
+  if (!configured) return undefined;
+  try {
+    const origin = new URL(configured);
+    if (
+      origin.protocol !== "https:" ||
+      origin.origin !== configured ||
+      origin.username ||
+      origin.password
+    )
+      return undefined;
+    return `${origin.origin}/fichar.html`;
+  } catch {
+    return undefined;
+  }
+}
 
 export const processTelegram = internalMutation({
   args: { id: v.id("telegramInbox") },
@@ -53,6 +70,7 @@ async function reply(
     linkId,
     chatId,
     text,
+    webAppUrl: webAppUrl(),
     status: "pending",
     attempts: 0,
     createdAt: Date.now(),
@@ -92,7 +110,7 @@ async function processOne(ctx: MutationCtx, input: Doc<"telegramInbox">) {
       linked.employeeId,
       linked.linkId,
       input.chatId,
-      `Telegram vinculado a ${employee!.name}. Enviá entrada o salida para fichar.`,
+      `Telegram vinculado a ${employee!.name}. Tocá Fichar para registrar entrada o salida desde tu teléfono.`,
     );
     return;
   }
@@ -153,61 +171,29 @@ async function processOne(ctx: MutationCtx, input: Doc<"telegramInbox">) {
     });
     if (input.kind === "text") {
       const command = input.text?.trim().toLowerCase();
-      if (command !== "entrada" && command !== "salida")
-        throw new AttendanceRejection(
-          "Enviá entrada o salida y luego tu ubicación actual.",
-        );
-      await ctx.db.patch(state._id, {
-        pending: command,
-        pendingAt: input.timestamp,
-      });
-      result = `Enviá tu ubicación actual de Telegram para confirmar ${command}.`;
-    } else {
       if (
-        input.kind !== "location" ||
-        !state.pending ||
-        state.pendingAt === undefined ||
-        input.timestamp < state.pendingAt ||
-        input.timestamp - state.pendingAt > 300000
+        !command ||
+        !["entrada", "salida", "fichar", "ayuda", "/fichar", "/ayuda"].includes(
+          command,
+        )
       )
         throw new AttendanceRejection(
-          "Enviá entrada o salida antes de compartir tu ubicación.",
+          "Tocá Fichar para registrar entrada o salida desde tu teléfono.",
         );
-      const sites = await ctx.db.query("sites").collect();
-      const last = await ctx.db
-        .query("attendance")
-        .withIndex("employee", (q) => q.eq("employeeId", employee._id))
-        .order("desc")
-        .first();
-      const site = decideAttendance({
-        kind: state.pending,
-        latitude: input.latitude!,
-        longitude: input.longitude!,
-        timestamp: input.timestamp,
-        now,
-        active: employee.active,
-        lastTimestamp: last?.timestamp,
-        open: state.openSiteId ? { siteId: state.openSiteId } : null,
-        sites: sites.map((s) => ({ ...s, id: s._id })),
-      });
-      const siteId = sites.find((s) => s._id === site.id)!._id;
-      await ctx.db.insert("attendance", {
-        employeeId: employee._id,
-        siteId,
-        employeeName: employee.name,
-        siteName: site.name,
-        kind: state.pending,
-        timestamp: input.timestamp,
-        latitude: input.latitude!,
-        longitude: input.longitude!,
-        messageId: `${input.chatId}:${input.messageId}`,
-      });
       await ctx.db.patch(state._id, {
-        openSiteId: state.pending === "entrada" ? siteId : undefined,
         pending: undefined,
         pendingAt: undefined,
       });
-      result = `${state.pending === "entrada" ? "Entrada" : "Salida"} registrada en ${site.name}.`;
+      result = "Tocá Fichar para registrar entrada o salida desde tu teléfono.";
+    } else {
+      if (input.kind !== "location")
+        throw new AttendanceRejection("Mensaje no admitido.");
+      await ctx.db.patch(state._id, {
+        pending: undefined,
+        pendingAt: undefined,
+      });
+      result =
+        "La ubicación enviada por chat no registra asistencia. Tocá Fichar desde tu teléfono.";
     }
     accepted = true;
   } catch (error) {

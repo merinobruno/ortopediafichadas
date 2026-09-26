@@ -7,6 +7,8 @@ const allowed = new Map([
   ["/api/employees/link-code", "POST"],
   ["/api/employees/revoke-link", "POST"],
   ["/api/telegram-operations", "GET"],
+  ["/api/phone/challenge", "POST"],
+  ["/api/phone/submit", "POST"],
 ]);
 const failure = (error: string, status: number) =>
   Response.json(

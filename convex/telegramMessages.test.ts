@@ -1,7 +1,6 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
 import { expect, it, vi } from "vitest";
-import * as core from "./core";
 import schema from "./schema";
 import { internal } from "./_generated/api";
 const modules = import.meta.glob("./**/*.ts");
@@ -10,15 +9,6 @@ async function linked() {
   const t = convexTest(schema, modules);
   const employeeId = await t.run((ctx) =>
     ctx.db.insert("employees", { name: "Ana", active: true }),
-  );
-  await t.run((ctx) =>
-    ctx.db.insert("sites", {
-      name: "Central",
-      latitude: -34.6,
-      longitude: -58.4,
-      radius: 100,
-      active: true,
-    }),
   );
   const linkId = await t.run((ctx) =>
     ctx.db.insert("telegramLinks", {
@@ -31,8 +21,9 @@ async function linked() {
   return { t, employeeId, linkId };
 }
 
-it("drains command before equal-second location and keeps duplicate update idempotent", async () => {
-  const { t, employeeId } = await linked();
+it("orders a command and manual pin without recording attendance, and deduplicates update ID", async () => {
+  vi.stubEnv("APP_ORIGIN", "https://attendance.example");
+  const { t } = await linked();
   const timestamp = Math.floor(Date.now() / 1000) * 1000;
   const base = { userId: "8", chatId: "8", timestamp };
   await t.mutation(internal.telegramInbox.receiveTelegram, {
@@ -67,24 +58,32 @@ it("drains command before equal-second location and keeps duplicate update idemp
       longitude: -58.4,
     },
   });
-  const attendance = await t.run((ctx) => ctx.db.query("attendance").collect());
-  expect(attendance).toHaveLength(1);
-  expect(attendance[0].employeeId).toBe(employeeId);
   expect(
-    await t.run((ctx) => ctx.db.query("telegramOutbox").collect()),
-  ).toHaveLength(2);
+    await t.run((ctx) => ctx.db.query("attendance").collect()),
+  ).toHaveLength(0);
+  const outbox = await t.run((ctx) => ctx.db.query("telegramOutbox").collect());
+  expect(outbox).toHaveLength(2);
+  expect(
+    outbox.every(
+      (row) => row.webAppUrl === "https://attendance.example/fichar.html",
+    ),
+  ).toBe(true);
+  expect(outbox[1].text).toContain("no registra asistencia");
+  expect(
+    (await t.run((ctx) => ctx.db.query("conversations").first()))?.pending,
+  ).toBeUndefined();
+  vi.unstubAllEnvs();
 });
 
 it("does not let queued updates or replies cross revoke and relink to the same ID", async () => {
   const { t, employeeId } = await linked();
-  const timestamp = Math.floor(Date.now() / 1000) * 1000;
   const id = await t.mutation(internal.telegramInbox.receiveTelegram, {
     event: {
       updateId: 1,
       messageId: 1,
       userId: "8",
       chatId: "8",
-      timestamp,
+      timestamp: Date.now(),
       kind: "text",
       text: "entrada",
     },
@@ -100,172 +99,61 @@ it("does not let queued updates or replies cross revoke and relink to the same I
     });
   });
   await t.mutation(internal.telegramMessages.processTelegram, { id: id! });
-  expect(
-    (await t.run((ctx) => ctx.db.query("telegramInbox").first()))?.status,
-  ).toBe("rejected");
+  expect((await t.run((ctx) => ctx.db.get(id!)))?.status).toBe("rejected");
   expect(
     await t.run((ctx) => ctx.db.query("telegramOutbox").collect()),
   ).toHaveLength(0);
 });
 
-it("rolls back an unexpected attendance failure without exposing its message", async () => {
-  vi.useFakeTimers();
-  const { t } = await linked();
-  const timestamp = Math.floor(Date.now() / 1000) * 1000;
-  const command = await t.mutation(internal.telegramInbox.receiveTelegram, {
+it("clears a pre-existing pending chat intent without attendance", async () => {
+  const { t, employeeId, linkId } = await linked();
+  await t.run((ctx) =>
+    ctx.db.insert("conversations", {
+      employeeId,
+      linkId,
+      lastTimestamp: 0,
+      pending: "entrada",
+      pendingAt: Date.now() - 1000,
+    }),
+  );
+  const id = await t.mutation(internal.telegramInbox.receiveTelegram, {
     event: {
-      updateId: 11,
-      messageId: 11,
+      updateId: 3,
+      messageId: 3,
       userId: "8",
       chatId: "8",
-      timestamp,
-      kind: "text",
-      text: "entrada",
-    },
-  });
-  await t.mutation(internal.telegramMessages.processTelegram, { id: command! });
-  const location = await t.mutation(internal.telegramInbox.receiveTelegram, {
-    event: {
-      updateId: 12,
-      messageId: 12,
-      userId: "8",
-      chatId: "8",
-      timestamp: timestamp + 1000,
+      timestamp: Date.now(),
       kind: "location",
       latitude: -34.6,
       longitude: -58.4,
     },
   });
-  expect((await t.run((ctx) => ctx.db.get(location!)))?.status).toBe("pending");
-  const spy = vi.spyOn(core, "decideAttendance").mockImplementation(() => {
-    throw new Error("internal-secret-marker");
-  });
-  try {
-    await expect(
-      t.mutation(internal.telegramMessages.processTelegram, { id: location! }),
-    ).rejects.toThrow("internal-secret-marker");
-    expect(spy).toHaveBeenCalled();
-  } finally {
-    spy.mockRestore();
-    vi.useRealTimers();
-  }
-  expect((await t.run((ctx) => ctx.db.get(location!)))?.status).toBe("pending");
+  await t.mutation(internal.telegramMessages.processTelegram, { id: id! });
   expect(
     await t.run((ctx) => ctx.db.query("attendance").collect()),
   ).toHaveLength(0);
   expect(
-    JSON.stringify(
-      await t.run((ctx) => ctx.db.query("telegramOutbox").collect()),
-    ),
-  ).not.toContain("internal-secret-marker");
+    (await t.run((ctx) => ctx.db.query("conversations").first()))?.pending,
+  ).toBeUndefined();
 });
 
-it("keeps site and chronological exit rules across multiple visits", async () => {
-  vi.useFakeTimers();
-  try {
-    const { t, employeeId } = await linked();
-    await t.run((ctx) =>
-      ctx.db.insert("sites", {
-        name: "Other",
-        latitude: 1,
-        longitude: 1,
-        radius: 100,
-        active: true,
-      }),
-    );
-    const baseTime = Math.floor(Date.now() / 1000) * 1000 - 10000;
-    async function send(
-      updateId: number,
-      kind: "text" | "location",
-      timestamp: number,
-      extra: object,
-    ) {
-      const id = await t.mutation(internal.telegramInbox.receiveTelegram, {
-        event: {
-          updateId,
-          messageId: updateId,
-          userId: "8",
-          chatId: "8",
-          timestamp,
-          kind,
-          ...extra,
-        },
-      });
-      await t.mutation(internal.telegramMessages.processTelegram, { id: id! });
-    }
-    await send(1, "text", baseTime, { text: "entrada" });
-    await send(2, "location", baseTime + 1000, {
+it("rejects stale location without opening an attendance record", async () => {
+  const { t } = await linked();
+  const id = await t.mutation(internal.telegramInbox.receiveTelegram, {
+    event: {
+      updateId: 4,
+      messageId: 4,
+      userId: "8",
+      chatId: "8",
+      timestamp: Date.now() - 700000,
+      kind: "location",
       latitude: -34.6,
       longitude: -58.4,
-    });
-    await send(3, "text", baseTime + 2000, { text: "salida" });
-    await send(4, "location", baseTime + 3000, { latitude: 1, longitude: 1 });
-    expect(
-      await t.run((ctx) => ctx.db.query("attendance").collect()),
-    ).toHaveLength(1);
-    await send(5, "text", baseTime + 4000, { text: "salida" });
-    await send(6, "location", baseTime + 5000, {
-      latitude: -34.6,
-      longitude: -58.4,
-    });
-    const rows = await t.run((ctx) => ctx.db.query("attendance").collect());
-    expect(rows).toHaveLength(2);
-    expect(rows.map((row) => row.employeeId)).toEqual([employeeId, employeeId]);
-    expect(rows[1].siteId).toBe(rows[0].siteId);
-    await send(7, "text", baseTime, { text: "entrada" });
-    await send(8, "location", baseTime + 6000, {
-      latitude: -34.6,
-      longitude: -58.4,
-    });
-    expect(
-      await t.run((ctx) => ctx.db.query("attendance").collect()),
-    ).toHaveLength(2);
-  } finally {
-    vi.useRealTimers();
-  }
-});
-
-it("rejects an expired command window and location without a command", async () => {
-  vi.useFakeTimers();
-  try {
-    const { t } = await linked();
-    const now = Math.floor(Date.now() / 1000) * 1000;
-    const command = await t.mutation(internal.telegramInbox.receiveTelegram, {
-      event: {
-        updateId: 1,
-        messageId: 1,
-        userId: "8",
-        chatId: "8",
-        timestamp: now - 360000,
-        kind: "text",
-        text: "entrada",
-      },
-    });
-    await t.mutation(internal.telegramMessages.processTelegram, {
-      id: command!,
-    });
-    const location = await t.mutation(internal.telegramInbox.receiveTelegram, {
-      event: {
-        updateId: 2,
-        messageId: 2,
-        userId: "8",
-        chatId: "8",
-        timestamp: now,
-        kind: "location",
-        latitude: -34.6,
-        longitude: -58.4,
-      },
-    });
-    await t.mutation(internal.telegramMessages.processTelegram, {
-      id: location!,
-    });
-    expect(
-      await t.run((ctx) => ctx.db.query("attendance").collect()),
-    ).toHaveLength(0);
-    expect((await t.run((ctx) => ctx.db.get(location!)))?.status).toBe(
-      "rejected",
-    );
-  } finally {
-    vi.useRealTimers();
-  }
+    },
+  });
+  await t.mutation(internal.telegramMessages.processTelegram, { id: id! });
+  expect((await t.run((ctx) => ctx.db.get(id!)))?.status).toBe("rejected");
+  expect(
+    await t.run((ctx) => ctx.db.query("attendance").collect()),
+  ).toHaveLength(0);
 });

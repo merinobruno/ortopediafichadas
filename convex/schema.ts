@@ -38,6 +38,8 @@ export default defineSchema({
     latitude: v.number(),
     longitude: v.number(),
     messageId: v.string(),
+    source: v.optional(v.literal("telegram_mini_app")),
+    horizontalAccuracy: v.optional(v.number()),
   }).index("employee", ["employeeId", "timestamp"]),
   conversations: defineTable({
     employeeId: v.id("employees"),
@@ -117,6 +119,7 @@ export default defineSchema({
     linkId: v.id("telegramLinks"),
     chatId: v.string(),
     text: v.string(),
+    webAppUrl: v.optional(v.string()),
     status: v.string(),
     attempts: v.number(),
     nextAttemptAt: v.optional(v.number()),
@@ -124,4 +127,15 @@ export default defineSchema({
     reasonCode: v.optional(v.string()),
     createdAt: v.number(),
   }),
+  telegramPhoneChallenges: defineTable({
+    employeeId: v.id("employees"),
+    linkId: v.id("telegramLinks"),
+    userId: v.string(),
+    digest: v.string(),
+    kind: v.union(v.literal("entrada"), v.literal("salida")),
+    expiresAt: v.number(),
+    attendanceId: v.optional(v.id("attendance")),
+  })
+    .index("digest", ["digest"])
+    .index("link", ["linkId"]),
 });

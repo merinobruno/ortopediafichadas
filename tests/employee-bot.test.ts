@@ -89,13 +89,18 @@ test("simulator pending intent is separate from Telegram and has no provider que
   try {
     receiveEmployeeMessage(s, message("entry", "entrada"), "telegram", now);
     assert.equal(
-      s.one("SELECT key FROM bot_pending WHERE key='telegram:e'")?.key,
-      "telegram:e",
+      s.one("SELECT key FROM bot_pending WHERE key='telegram:e'"),
+      undefined,
+    );
+    simulateEmployeeText(s, "e", "entrada", "hr", now);
+    assert.equal(
+      s.one("SELECT key FROM bot_pending WHERE key='simulator:e'")?.key,
+      "simulator:e",
     );
     simulateEmployeeText(s, "e", "cancelar", "hr", now);
     assert.equal(
-      s.one("SELECT key FROM bot_pending WHERE key='telegram:e'")?.key,
-      "telegram:e",
+      s.one("SELECT key FROM bot_pending WHERE key='simulator:e'"),
+      undefined,
     );
     assert.equal(s.one("SELECT COUNT(*) n FROM telegram_inbox").n, 0);
     assert.equal(s.one("SELECT COUNT(*) n FROM telegram_outbox").n, 0);

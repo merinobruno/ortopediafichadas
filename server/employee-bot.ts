@@ -58,6 +58,40 @@ export function receiveEmployeeMessage(
       text = String(m.text || "").trim(),
       word = text.toLowerCase(),
       pendingKey = source + ":" + employee.id;
+    if (source === "telegram")
+      s.db.prepare("DELETE FROM bot_pending WHERE key=?").run(pendingKey);
+    if (
+      source === "telegram" &&
+      (m.kind === "location" ||
+        [
+          "entrada",
+          "salida",
+          "presente",
+          "fichar",
+          "ayuda",
+          "/fichar",
+          "/ayuda",
+        ].includes(word))
+    ) {
+      const reply =
+        m.kind === "location"
+          ? "La ubicación enviada por chat no registra asistencia. Consultá a RRHH para fichar desde tu teléfono."
+          : "La fichada por chat está deshabilitada. Consultá a RRHH para fichar desde tu teléfono.";
+      s.db
+        .prepare(
+          "INSERT INTO employee_bot_results VALUES(?,?,?,?,?,?,'processed',?)",
+        )
+        .run(
+          m.id,
+          employee.id,
+          time,
+          source,
+          m.kind === "text" ? text : "[location]",
+          reply,
+          receivedAt,
+        );
+      return reply;
+    }
     const saved = s.one("SELECT * FROM bot_pending WHERE key=?", pendingKey),
       pending =
         saved &&
@@ -100,7 +134,10 @@ export function receiveEmployeeMessage(
       s.db.prepare("DELETE FROM bot_pending WHERE key=?").run(pendingKey);
       return result.message;
     };
-    let reply = BOT_HELP;
+    let reply =
+      source === "telegram"
+        ? "La fichada por chat está deshabilitada. Consultá a RRHH para fichar desde tu teléfono. Para pausas, enviá pausa o finpausa. Para licencias, enviá solicitar licencia DD/MM/YYYY DD/MM/YYYY | Tipo | Motivo."
+        : BOT_HELP;
     if (exact) reply = complete(exact.id);
     else if (m.kind === "text" && word === "ayuda") reply = BOT_HELP;
     else if (m.kind === "text" && word === "cancelar") {
