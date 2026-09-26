@@ -1,4 +1,10 @@
 import { afterEach, expect, it, vi } from "vitest";
+import { build } from "esbuild";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, sep } from "node:path";
+import { pathToFileURL } from "node:url";
 import issueRoute from "../../api/employees/link-code";
 import revokeRoute from "../../api/employees/revoke-link";
 import operationsRoute from "../../api/[...path]";
@@ -73,4 +79,39 @@ it("keeps the existing one-segment Telegram operations route", async () => {
   expect(response.status).toBe(200);
   expect(await response.json()).toEqual({ inbound: [], outbound: [] });
   expect(upstream).toHaveBeenCalledOnce();
+});
+
+it("loads emitted nested functions with native Node ESM resolution", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "attendance-routes-"));
+  try {
+    writeFileSync(join(directory, "package.json"), '{"type":"module"}');
+    await build({
+      entryPoints: [
+        "api/[...path].ts",
+        "api/employees/link-code.ts",
+        "api/employees/revoke-link.ts",
+      ],
+      outbase: "api",
+      outdir: directory,
+      bundle: false,
+      platform: "node",
+      format: "esm",
+      logLevel: "silent",
+    });
+    for (const name of ["link-code", "revoke-link"]) {
+      const url = pathToFileURL(join(directory, "employees", `${name}.js`));
+      execFileSync(process.execPath, [
+        "--input-type=module",
+        "-e",
+        "const route = await import(process.argv[1]); if (typeof route.default?.fetch !== 'function') process.exit(1)",
+        url.href,
+      ]);
+    }
+  } finally {
+    const tempRoot = realpathSync(tmpdir());
+    const target = realpathSync(directory);
+    if (!target.startsWith(`${tempRoot}${sep}`))
+      throw new Error("Unexpected temporary directory");
+    rmSync(target, { recursive: true, force: true });
+  }
 });
