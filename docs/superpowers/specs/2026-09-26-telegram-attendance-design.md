@@ -1,6 +1,6 @@
 # Replace WhatsApp attendance with Telegram
 
-Status: design for review, September 26, 2026. This supersedes the WhatsApp transport and phone-identity decisions in the September 9 attendance design. It describes intended behavior, not an active Telegram connection.
+Status: approved September 26, 2026. This supersedes the WhatsApp transport and phone-identity decisions in the September 9 attendance design. It describes intended behavior; a live Telegram connection still requires deployment and bot configuration.
 
 Employees will record attendance in a private Telegram bot chat. HR will link each employee to that chat with a short-lived, single-use code. No mobile phone number is needed. The replacement covers the deployed Convex/Vercel path and the retained local server; attendance rules, employee and site records, and recorded attendance remain.
 

@@ -1,6 +1,17 @@
 # Delivery inventory
 
-The approved design remains docs/superpowers/specs/2026-09-09-attendance-design.md. Reference navigation is evidence of inventory, not completed parity. The reference settings also expose a multiple-fichada option; the user's failure was observed by the user, not diagnosed here.
+## Active Convex/Vercel Telegram replacement (local source, not deployed)
+
+The approved basic path now uses HR-issued one-time Telegram linking, a verified
+private-chat webhook, a deduplicated ordered inbox, attendance geofencing, guarded
+Telegram replies, and redacted operations. Employee/site/attendance identities
+remain stable; old phone and WhatsApp transport rows are retained only for a
+private, bounded cleanup after cutover, with no replay. Local tests and build
+verify source behavior; bot provisioning, HTTPS webhook registration, and a live
+link/location/reply check remain pending. The inventory below describes the
+retained SQLite product and its separate migration work.
+
+The September 9 attendance design remains the domain baseline; the approved September 26 Telegram design supersedes its transport and phone identity decisions. Reference navigation is evidence of inventory, not completed parity. The reference settings also expose a multiple-fichada option; the user's failure was observed by the user, not diagnosed here.
 
 | Group | Delivered | Remaining |
 | --- | --- | --- |

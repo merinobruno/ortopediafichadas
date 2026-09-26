@@ -17,8 +17,13 @@ import type * as auth from "../auth.js";
 import type * as core from "../core.js";
 import type * as data from "../data.js";
 import type * as http from "../http.js";
-import type * as messages from "../messages.js";
-import type * as whatsapp from "../whatsapp.js";
+import type * as telegramCleanup from "../telegramCleanup.js";
+import type * as telegramInbox from "../telegramInbox.js";
+import type * as telegramLinks from "../telegramLinks.js";
+import type * as telegramMessages from "../telegramMessages.js";
+import type * as telegramOperations from "../telegramOperations.js";
+import type * as telegramSend from "../telegramSend.js";
+import type * as telegramUpdate from "../telegramUpdate.js";
 
 /**
  * A utility for referencing Convex functions in your app's API.
@@ -33,8 +38,13 @@ declare const fullApi: ApiFromModules<{
   core: typeof core;
   data: typeof data;
   http: typeof http;
-  messages: typeof messages;
-  whatsapp: typeof whatsapp;
+  telegramCleanup: typeof telegramCleanup;
+  telegramInbox: typeof telegramInbox;
+  telegramLinks: typeof telegramLinks;
+  telegramMessages: typeof telegramMessages;
+  telegramOperations: typeof telegramOperations;
+  telegramSend: typeof telegramSend;
+  telegramUpdate: typeof telegramUpdate;
 }>;
 export declare const api: FilterApi<
   typeof fullApi,

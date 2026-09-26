@@ -4,6 +4,9 @@ const allowed = new Map([
   ["/api/data", "GET"],
   ["/api/employees", "POST"],
   ["/api/sites", "POST"],
+  ["/api/employees/link-code", "POST"],
+  ["/api/employees/revoke-link", "POST"],
+  ["/api/telegram-operations", "GET"],
 ]);
 const failure = (error: string, status: number) =>
   Response.json(

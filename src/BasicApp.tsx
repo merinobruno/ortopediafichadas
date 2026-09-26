@@ -7,10 +7,16 @@ import {
   Plus,
   Pencil,
   ArrowRight,
+  Send,
 } from "lucide-react";
 import "./basic.css";
 import SiteLocationPicker from "./SiteLocationPicker";
-type Employee = { _id: string; name: string; phone: string; active: boolean };
+type Employee = {
+  _id: string;
+  name: string;
+  active: boolean;
+  telegramLinked: boolean;
+};
 type Site = {
   _id: string;
   name: string;
@@ -34,7 +40,21 @@ type Data = {
   sites: Site[];
   attendance: Attendance[];
 };
-type Section = "employees" | "sites" | "attendance";
+type Section = "employees" | "sites" | "attendance" | "telegram";
+type Operations = {
+  inbound: {
+    updateId: number;
+    status: string;
+    receivedAt: number;
+    reasonCode?: string;
+  }[];
+  outbound: {
+    status: string;
+    attempts: number;
+    createdAt: number;
+    reasonCode?: string;
+  }[];
+};
 async function request(path: string, body?: unknown) {
   let response: Response;
   let result;
@@ -63,6 +83,7 @@ const names = {
   employees: "Empleados",
   sites: "Sedes",
   attendance: "Fichadas",
+  telegram: "Telegram",
 };
 const date = (timestamp: number) =>
   new Intl.DateTimeFormat("es-AR", {
@@ -79,6 +100,12 @@ export default function BasicApp() {
   const [editing, setEditing] = useState<Employee | Site | "new" | null>(null);
   const [filter, setFilter] = useState("");
   const [notice, setNotice] = useState("");
+  const [visibleCode, setVisibleCode] = useState<{
+    employeeId: string;
+    code: string;
+    expiresAt: number;
+  } | null>(null);
+  const [operations, setOperations] = useState<Operations | null>(null);
   async function reload() {
     try {
       setData(await request("data"));
@@ -204,34 +231,43 @@ export default function BasicApp() {
           <p>Asistencia</p>
         </div>
         <nav aria-label="Secciones">
-          {(["employees", "sites", "attendance"] as Section[]).map((key) => {
-            const Icon =
-              key === "employees"
-                ? Users
-                : key === "sites"
-                  ? Building2
-                  : Clock3;
-            return (
-              <a
-                key={key}
-                href={`#${key}`}
-                aria-current={section === key ? "page" : undefined}
-                aria-disabled={busy || undefined}
-                onClick={(e) => {
-                  e.preventDefault();
-                  if (busy) return;
-                  setSection(key);
-                  setEditing(null);
-                  setError("");
-                  setNotice("");
-                  setFilter("");
-                }}
-              >
-                <Icon size={19} aria-hidden="true" />
-                {names[key]}
-              </a>
-            );
-          })}
+          {(["employees", "sites", "attendance", "telegram"] as Section[]).map(
+            (key) => {
+              const Icon =
+                key === "employees"
+                  ? Users
+                  : key === "sites"
+                    ? Building2
+                    : key === "attendance"
+                      ? Clock3
+                      : Send;
+              return (
+                <a
+                  key={key}
+                  href={`#${key}`}
+                  aria-current={section === key ? "page" : undefined}
+                  aria-disabled={busy || undefined}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    if (busy) return;
+                    setSection(key);
+                    setEditing(null);
+                    setError("");
+                    setNotice("");
+                    setFilter("");
+                    setVisibleCode(null);
+                    if (key === "telegram")
+                      void perform(async () =>
+                        setOperations(await request("telegram-operations")),
+                      );
+                  }}
+                >
+                  <Icon size={19} aria-hidden="true" />
+                  {names[key]}
+                </a>
+              );
+            },
+          )}
         </nav>
         <div className="basic-account">
           <small>{data.email}</small>
@@ -259,10 +295,12 @@ export default function BasicApp() {
                 ? "Las personas que forman parte de tu equipo."
                 : section === "sites"
                   ? "Los lugares donde empieza y termina cada jornada."
-                  : "Entradas y salidas registradas por WhatsApp."}
+                  : section === "attendance"
+                    ? "Entradas y salidas registradas por Telegram."
+                    : "Estado reciente de mensajes y respuestas del bot."}
             </p>
           </div>
-          {section !== "attendance" && !editing && (
+          {(section === "employees" || section === "sites") && !editing && (
             <button
               className="basic-primary"
               disabled={busy}
@@ -287,7 +325,7 @@ export default function BasicApp() {
             {notice}
           </p>
         )}
-        {editing && section !== "attendance" && (
+        {editing && (section === "employees" || section === "sites") && (
           <form
             className="basic-editor"
             key={`${section}-${selected?._id ?? "new"}`}
@@ -308,13 +346,13 @@ export default function BasicApp() {
                 ...(selected ? { id: selected._id } : {}),
                 name: String(form.get("name")),
                 active: form.get("active") === "on",
-                ...(section === "employees"
-                  ? { phone: String(form.get("phone")) }
-                  : {
+                ...(section === "sites"
+                  ? {
                       latitude: Number(form.get("latitude")),
                       longitude: Number(form.get("longitude")),
                       radius: Number(form.get("radius")),
-                    }),
+                    }
+                  : {}),
               };
               void perform(async () => {
                 await request(section, value);
@@ -339,24 +377,7 @@ export default function BasicApp() {
                   autoFocus
                 />
               </label>
-              {section === "employees" ? (
-                <label>
-                  Teléfono internacional
-                  <input
-                    name="phone"
-                    aria-label="Teléfono internacional"
-                    aria-describedby="phone-help"
-                    type="tel"
-                    required
-                    maxLength={32}
-                    placeholder="+54 9 11 1234 5678"
-                    defaultValue={(selected as Employee | null)?.phone ?? ""}
-                  />
-                  <small id="phone-help">
-                    Incluí el código de país. Debe coincidir con WhatsApp.
-                  </small>
-                </label>
-              ) : (
+              {section === "sites" && (
                 <SiteLocationPicker
                   initialLocation={
                     selected && "latitude" in selected
@@ -394,7 +415,45 @@ export default function BasicApp() {
             </div>
           </form>
         )}
-        {section === "attendance" ? (
+        {section === "telegram" ? (
+          <section className="basic-operations">
+            <p>
+              Los envíos inciertos requieren revisión. Esta pantalla no reenvía
+              mensajes.
+            </p>
+            <button
+              className="basic-secondary"
+              disabled={busy}
+              onClick={() =>
+                void perform(async () =>
+                  setOperations(await request("telegram-operations")),
+                )
+              }
+            >
+              Actualizar estado
+            </button>
+            <h2>Mensajes recibidos</h2>
+            <ul>
+              {operations?.inbound.map((row) => (
+                <li key={row.updateId}>
+                  Actualización {row.updateId} · {row.status} ·{" "}
+                  {date(row.receivedAt)}
+                  {row.reasonCode ? ` · ${row.reasonCode}` : ""}
+                </li>
+              ))}
+            </ul>
+            <h2>Respuestas del bot</h2>
+            <ul>
+              {operations?.outbound.map((row, index) => (
+                <li key={index}>
+                  {row.status} · {row.attempts} intento(s) ·{" "}
+                  {date(row.createdAt)}
+                  {row.reasonCode ? ` · ${row.reasonCode}` : ""}
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : section === "attendance" ? (
           <>
             <div className="basic-toolbar">
               <label>
@@ -453,7 +512,7 @@ export default function BasicApp() {
                   <p>
                     {filter
                       ? "Probá con otro empleado o sede."
-                      : "Las entradas y salidas confirmadas por WhatsApp aparecerán acá."}
+                      : "Las entradas y salidas confirmadas por Telegram aparecerán acá."}
                   </p>
                 </div>
               )}
@@ -470,7 +529,11 @@ export default function BasicApp() {
               <thead>
                 <tr>
                   <th>Nombre</th>
-                  <th>{section === "employees" ? "WhatsApp" : "Ubicación"}</th>
+                  <th>
+                    {section === "employees"
+                      ? "Vínculo de Telegram"
+                      : "Ubicación"}
+                  </th>
                   {section === "sites" && <th>Radio</th>}
                   <th>Estado</th>
                   <th>
@@ -484,8 +547,10 @@ export default function BasicApp() {
                     <tr key={row._id}>
                       <td>{row.name}</td>
                       <td>
-                        {"phone" in row
-                          ? `+${row.phone}`
+                        {"telegramLinked" in row
+                          ? row.telegramLinked
+                            ? "Telegram vinculado"
+                            : "Sin vincular"
                           : `${row.latitude.toFixed(5)}, ${row.longitude.toFixed(5)}`}
                       </td>
                       {"radius" in row && <td>{row.radius} m</td>}
@@ -497,6 +562,49 @@ export default function BasicApp() {
                         </span>
                       </td>
                       <td>
+                        {"telegramLinked" in row && (
+                          <div className="basic-link-actions">
+                            {!row.telegramLinked && row.active && (
+                              <button
+                                className="basic-secondary"
+                                disabled={busy}
+                                aria-label={`Generar código para ${row.name}`}
+                                onClick={() =>
+                                  void perform(async () => {
+                                    const issued = await request(
+                                      "employees/link-code",
+                                      { employeeId: row._id },
+                                    );
+                                    setVisibleCode({
+                                      employeeId: row._id,
+                                      code: issued.code,
+                                      expiresAt: issued.expiresAt,
+                                    });
+                                  })
+                                }
+                              >
+                                Generar código
+                              </button>
+                            )}
+                            <button
+                              className="basic-secondary"
+                              disabled={busy}
+                              aria-label={`Revocar vínculo de ${row.name}`}
+                              onClick={() =>
+                                void perform(async () => {
+                                  await request("employees/revoke-link", {
+                                    employeeId: row._id,
+                                  });
+                                  setVisibleCode(null);
+                                  await reload();
+                                  setNotice("Vínculo revocado.");
+                                })
+                              }
+                            >
+                              Revocar
+                            </button>
+                          </div>
+                        )}
                         <button
                           className="basic-edit"
                           disabled={busy}
@@ -531,12 +639,31 @@ export default function BasicApp() {
                 </h2>
                 <p>
                   {section === "employees"
-                    ? "Cargá un empleado con su número de WhatsApp para habilitar sus fichadas."
+                    ? "Cargá un empleado y generá un código para vincularlo con el bot de Telegram."
                     : "Definí la ubicación y el radio permitido para registrar asistencia."}
                 </p>
               </div>
             )}
           </div>
+        )}
+        {section === "employees" && visibleCode && (
+          <aside className="basic-code" aria-live="polite">
+            <h2>Código de vinculación</h2>
+            <p>
+              Mostrá este código una sola vez al empleado. Debe abrir un chat
+              privado con el bot de Telegram y enviarlo antes del vencimiento.
+            </p>
+            <code>{visibleCode.code}</code>
+            <p>Vence el {date(visibleCode.expiresAt)}.</p>
+            <button
+              className="basic-secondary"
+              onClick={() =>
+                void navigator.clipboard?.writeText(visibleCode.code)
+              }
+            >
+              Copiar código
+            </button>
+          </aside>
         )}
         {section === "sites" && (
           <p className="basic-footnote">

@@ -535,6 +535,37 @@ tr:last-child td {
   clip: rect(0, 0, 0, 0);
   border: 0;
 }
+.basic-link-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.basic-code,
+.basic-operations {
+  margin-top: 24px;
+  padding: 22px;
+  border: 1px solid #dce7e1;
+  border-radius: 14px;
+  background: #f8fbf9;
+}
+.basic-code code {
+  display: inline-block;
+  padding: 10px 14px;
+  margin: 8px 0;
+  background: #e5f2eb;
+  border-radius: 8px;
+  font-size: 1.25rem;
+  letter-spacing: 0.12em;
+  user-select: all;
+}
+.basic-operations ul {
+  padding-left: 22px;
+  line-height: 1.8;
+}
+.basic-operations li {
+  overflow-wrap: anywhere;
+}
 @media (max-width: 800px) {
   .basic-sidebar {
     width: 185px;

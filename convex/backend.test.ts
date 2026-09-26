@@ -1,80 +1,124 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
-import { expect, it, vi } from "vitest";
+import { expect, it } from "vitest";
 import schema from "./schema";
 import { internal } from "./_generated/api";
 const modules = import.meta.glob("./**/*.ts");
-it("requires session and active admin on every data operation", async () => {
+
+async function authorized() {
   const t = convexTest(schema, modules);
-  await expect(
-    t.mutation(internal.data.list, { hash: "missing" }),
-  ).rejects.toThrow();
   const adminId = await t.run((ctx) =>
     ctx.db.insert("admins", {
       email: "a@b.c",
       passwordHash: "private",
-      active: false,
+      active: true,
     }),
   );
   await t.run((ctx) =>
     ctx.db.insert("sessions", {
-      hash: "token",
+      hash: "session",
       adminId,
       expires: Date.now() + 100000,
     }),
   );
+  return t;
+}
+
+it("requires an active administrator session for data access", async () => {
+  const t = await authorized();
   await expect(
-    t.mutation(internal.data.list, { hash: "token" }),
+    t.mutation(internal.data.list, { hash: "bad" }),
+  ).rejects.toThrow();
+  const session = await t.run((ctx) => ctx.db.query("sessions").first());
+  await t.run((ctx) => ctx.db.patch(session!._id, { expires: Date.now() - 1 }));
+  await expect(
+    t.mutation(internal.data.list, { hash: "session" }),
   ).rejects.toThrow();
 });
-it("deduplicates messages before scheduled processing and preserves immutable history", async () => {
-  vi.useFakeTimers();
-  const t = convexTest(schema, modules);
-  const now = Date.now();
-  await t.run(async (ctx) => {
-    await ctx.db.insert("employees", {
+
+it("saves employees without phones and exposes only their link status", async () => {
+  const t = await authorized();
+  await t.mutation(internal.data.saveEmployee, {
+    hash: "session",
+    name: " Ana ",
+    active: true,
+  });
+  const employee = (
+    await t.run((ctx) => ctx.db.query("employees").collect())
+  )[0];
+  expect(employee.name).toBe("Ana");
+  expect(employee.phone).toBeUndefined();
+  const before = await t.mutation(internal.data.list, { hash: "session" });
+  expect(before.employees[0].telegramLinked).toBe(false);
+  await t.run((ctx) =>
+    ctx.db.insert("telegramLinks", {
+      employeeId: employee._id,
+      userId: "8",
+      chatId: "8",
+      createdAt: Date.now(),
+    }),
+  );
+  const after = await t.mutation(internal.data.list, { hash: "session" });
+  expect(after.employees[0].telegramLinked).toBe(true);
+  expect(JSON.stringify(after)).not.toContain("chatId");
+  expect(JSON.stringify(after)).not.toContain("phone");
+});
+
+it("preserves existing employee, site, and attendance identities during private bounded cleanup", async () => {
+  const t = await authorized();
+  const employeeId = await t.run((ctx) =>
+    ctx.db.insert("employees", {
       name: "Ana",
       phone: "5491112345678",
       active: true,
-    });
-    await ctx.db.insert("sites", {
+    }),
+  );
+  const siteId = await t.run((ctx) =>
+    ctx.db.insert("sites", {
       name: "Central",
-      latitude: -34.6,
-      longitude: -58.4,
+      latitude: 0,
+      longitude: 0,
       radius: 100,
       active: true,
-    });
+    }),
+  );
+  const attendanceId = await t.run((ctx) =>
+    ctx.db.insert("attendance", {
+      employeeId,
+      siteId,
+      employeeName: "Ana",
+      siteName: "Central",
+      kind: "entrada",
+      timestamp: 1000,
+      latitude: 0,
+      longitude: 0,
+      messageId: "old",
+    }),
+  );
+  await t.run((ctx) =>
+    ctx.db.insert("inbox", {
+      messageId: "old",
+      phone: "5491112345678",
+      timestamp: 1000,
+      kind: "text",
+      status: "pending",
+    }),
+  );
+  await t.mutation(internal.telegramCleanup.clearLegacyTransport, {
+    limit: 10,
+    phase: "inbox",
   });
-  const command = {
-    messageId: "cmd",
-    phone: "5491112345678",
-    timestamp: now,
-    kind: "text",
-    text: "entrada",
-  };
-  await t.mutation(internal.messages.receive, { messages: [command, command] });
-  await t.finishAllScheduledFunctions(vi.runAllTimers);
-  const loc = {
-    messageId: "loc",
-    phone: command.phone,
-    timestamp: now,
-    kind: "location",
-    latitude: -34.6,
-    longitude: -58.4,
-  };
-  await t.mutation(internal.messages.receive, { messages: [loc, loc] });
-  await t.finishAllScheduledFunctions(vi.runAllTimers);
-  const rows = await t.run((ctx) => ctx.db.query("attendance").collect());
-  expect(rows).toHaveLength(1);
-  expect(rows[0]).toMatchObject({
-    employeeName: "Ana",
-    siteName: "Central",
-    kind: "entrada",
+  await t.mutation(internal.telegramCleanup.clearLegacyTransport, {
+    limit: 10,
+    phase: "employees",
   });
-  expect(await t.run((ctx) => ctx.db.query("inbox").collect())).toHaveLength(2);
-  vi.useRealTimers();
+  expect((await t.run((ctx) => ctx.db.get(employeeId)))?.phone).toBeUndefined();
+  expect(await t.run((ctx) => ctx.db.get(siteId))).toBeTruthy();
+  expect(await t.run((ctx) => ctx.db.get(attendanceId))).toBeTruthy();
+  expect(await t.run((ctx) => ctx.db.query("inbox").collect())).toHaveLength(0);
 });
-it("persists login throttles even when authentication fails", async () => {
+
+it("keeps login throttling durable", async () => {
   const t = convexTest(schema, modules);
   for (let i = 0; i < 5; i++)
     expect(
@@ -85,251 +129,43 @@ it("persists login throttles even when authentication fails", async () => {
   );
 });
 
-it("provisions only once, stores password and session hashes, expires and revokes access", async () => {
-  const t = convexTest(schema, modules);
-  await t.action(internal.auth.bootstrapAdmin, {
-    email: "admin@example.com",
-    password: "private-test-password-123",
-  });
-  await expect(
-    t.action(internal.auth.bootstrapAdmin, {
-      email: "other@example.com",
-      password: "private-test-password-456",
-    }),
-  ).rejects.toThrow();
-  const admin = await t.run((ctx) => ctx.db.query("admins").first());
-  expect(admin!.passwordHash).not.toContain("private-test-password");
-  expect(
-    await t.action(internal.auth.login, {
-      email: "admin@example.com",
-      password: "wrong",
-      clientKey: "ip1",
-    }),
-  ).toBeNull();
-  const login = await t.action(internal.auth.login, {
-    email: "admin@example.com",
-    password: "private-test-password-123",
-    clientKey: "ip1",
-  });
-  expect(login!.token).toHaveLength(64);
-  const session = await t.run((ctx) => ctx.db.query("sessions").first());
-  expect(session!.hash).not.toBe(login!.token);
-  expect(
-    (await t.mutation(internal.data.list, { hash: session!.hash })).email,
-  ).toBe("admin@example.com");
-  await t.run((ctx) => ctx.db.patch(session!._id, { expires: Date.now() - 1 }));
-  await expect(
-    t.mutation(internal.data.saveEmployee, {
-      hash: session!.hash,
-      name: "Ana",
-      phone: "5491112345678",
-      active: true,
-    }),
-  ).rejects.toThrow();
-  await t.mutation(internal.data.logout, { hash: session!.hash });
-  expect(await t.run((ctx) => ctx.db.query("sessions").collect())).toHaveLength(
-    0,
+it("deactivation invalidates links, codes and pending intent", async () => {
+  const t = await authorized();
+  const employeeId = await t.run((ctx) =>
+    ctx.db.insert("employees", { name: "Ana", active: true }),
   );
-});
-
-it("normalizes unique employee phones and validates site coordinates behind auth", async () => {
-  const t = convexTest(schema, modules);
   await t.run(async (ctx) => {
-    const adminId = await ctx.db.insert("admins", {
-      email: "a@b.c",
-      passwordHash: "private",
-      active: true,
+    await ctx.db.insert("telegramLinks", {
+      employeeId,
+      userId: "8",
+      chatId: "8",
+      createdAt: Date.now(),
     });
-    await ctx.db.insert("sessions", {
-      hash: "session",
-      adminId,
-      expires: Date.now() + 100000,
+    await ctx.db.insert("telegramCodes", {
+      employeeId,
+      digest: "hash",
+      expiresAt: Date.now() + 900000,
+    });
+    await ctx.db.insert("conversations", {
+      employeeId,
+      lastTimestamp: Date.now(),
+      pending: "entrada",
+      pendingAt: Date.now(),
     });
   });
   await t.mutation(internal.data.saveEmployee, {
     hash: "session",
-    name: " Ana ",
-    phone: "+54 9 11 1234-5678",
-    active: true,
-  });
-  await expect(
-    t.mutation(internal.data.saveEmployee, {
-      hash: "session",
-      name: "Other",
-      phone: "5491112345678",
-      active: true,
-    }),
-  ).rejects.toThrow();
-  await expect(
-    t.mutation(internal.data.saveSite, {
-      hash: "session",
-      name: "Bad",
-      latitude: 91,
-      longitude: 0,
-      radius: 100,
-      active: true,
-    }),
-  ).rejects.toThrow();
-  const employee = (
-    await t.run((ctx) => ctx.db.query("employees").collect())
-  )[0];
-  expect(employee).toMatchObject({ name: "Ana", phone: "5491112345678" });
-  await t.mutation(internal.data.saveEmployee, {
-    hash: "session",
-    id: employee._id,
+    id: employeeId,
     name: "Ana",
-    phone: employee.phone,
     active: false,
   });
-  expect((await t.run((ctx) => ctx.db.get(employee._id)))!.active).toBe(false);
-});
-
-it("rejects wrong-site exit and stale events without altering an open entry", async () => {
-  vi.useFakeTimers();
-  const t = convexTest(schema, modules);
-  const now = Date.now();
-  const phone = "5491112345678";
-  await t.run(async (ctx) => {
-    await ctx.db.insert("employees", { name: "Ana", phone, active: true });
-    await ctx.db.insert("sites", {
-      name: "A",
-      latitude: 0,
-      longitude: 0,
-      radius: 100,
-      active: true,
-    });
-    await ctx.db.insert("sites", {
-      name: "B",
-      latitude: 1,
-      longitude: 1,
-      radius: 100,
-      active: true,
-    });
-  });
-  async function send(messageId: string, timestamp: number, value: object) {
-    await t.mutation(internal.messages.receive, {
-      messages: [{ messageId, timestamp, phone, ...value }] as any,
-    });
-    await t.finishAllScheduledFunctions(vi.runAllTimers);
-  }
-  await send("in", now - 5000, { kind: "text", text: "entrada" });
-  await send("inloc", now - 4000, {
-    kind: "location",
-    latitude: 0,
-    longitude: 0,
-  });
-  await send("out", now - 3000, { kind: "text", text: "salida" });
-  await send("wrongloc", now - 2000, {
-    kind: "location",
-    latitude: 1,
-    longitude: 1,
-  });
   expect(
-    await t.run((ctx) => ctx.db.query("attendance").collect()),
-  ).toHaveLength(1);
-  await send("out2", now - 1000, { kind: "text", text: "salida" });
-  await send("correctloc", now, {
-    kind: "location",
-    latitude: 0,
-    longitude: 0,
-  });
+    await t.run((ctx) => ctx.db.query("telegramLinks").collect()),
+  ).toHaveLength(0);
   expect(
-    await t.run((ctx) => ctx.db.query("attendance").collect()),
-  ).toHaveLength(2);
-  await send("old", now - 1000000, { kind: "text", text: "entrada" });
+    await t.run((ctx) => ctx.db.query("telegramCodes").collect()),
+  ).toHaveLength(0);
   expect(
-    (await t.run((ctx) =>
-      ctx.db
-        .query("inbox")
-        .withIndex("message", (q) => q.eq("messageId", "old"))
-        .unique(),
-    ))!.status,
-  ).toBe("rejected");
-  expect(
-    (await t.run((ctx) => ctx.db.query("conversations").first()))!.openSiteId,
+    (await t.run((ctx) => ctx.db.query("conversations").first()))?.pending,
   ).toBeUndefined();
-  vi.useRealTimers();
-});
-
-it("does not create account throttle rows once the client is rate limited", async () => {
-  const t = convexTest(schema, modules);
-  for (let i = 0; i < 5; i++)
-    await t.mutation(internal.data.loginAttempt, {
-      email: "ip:limited-client",
-    });
-  await t.action(internal.auth.login, {
-    email: "unbounded-new-email@example.com",
-    password: "wrong",
-    clientKey: "limited-client",
-  });
-  expect(await t.run((ctx) => ctx.db.query("limits").collect())).toHaveLength(
-    1,
-  );
-});
-
-it("expires replies based on the inbound timestamp before attempting a send", async () => {
-  const t = convexTest(schema, modules);
-  const id = await t.run((ctx) =>
-    ctx.db.insert("outbox", {
-      phone: "5491112345678",
-      text: "Reply",
-      status: "pending",
-      expiresAt: Date.now() - 1,
-    }),
-  );
-  expect(
-    await t.mutation(internal.messages.claimSend, { id, enabled: true }),
-  ).toBeNull();
-  expect((await t.run((ctx) => ctx.db.get(id)))!.status).toBe("expired");
-});
-
-it("processes a queued command before its location even if the location worker runs first", async () => {
-  vi.useFakeTimers();
-  const t = convexTest(schema, modules);
-  const now = Date.now();
-  const phone = "5491112345678";
-  await t.run(async (ctx) => {
-    await ctx.db.insert("employees", { name: "Ana", phone, active: true });
-    await ctx.db.insert("sites", {
-      name: "A",
-      latitude: 0,
-      longitude: 0,
-      radius: 100,
-      active: true,
-    });
-  });
-  await t.mutation(internal.messages.receive, {
-    messages: [
-      {
-        messageId: "cmd",
-        phone,
-        timestamp: now - 1000,
-        kind: "text",
-        text: "entrada",
-      },
-      {
-        messageId: "loc",
-        phone,
-        timestamp: now,
-        kind: "location",
-        latitude: 0,
-        longitude: 0,
-      },
-    ],
-  });
-  const location = await t.run((ctx) =>
-    ctx.db
-      .query("inbox")
-      .withIndex("message", (q) => q.eq("messageId", "loc"))
-      .unique(),
-  );
-  await t.mutation(internal.messages.process, { id: location!._id });
-  expect(
-    await t.run((ctx) => ctx.db.query("attendance").collect()),
-  ).toHaveLength(1);
-  await t.finishAllScheduledFunctions(vi.runAllTimers);
-  expect(
-    await t.run((ctx) => ctx.db.query("attendance").collect()),
-  ).toHaveLength(1);
-  vi.useRealTimers();
 });

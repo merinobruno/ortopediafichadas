@@ -1,8 +1,8 @@
 import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
-import { normalizePhone, validCoordinates } from "./core";
+import { validCoordinates } from "./core";
 import type { MutationCtx } from "./_generated/server";
-async function authorize(ctx: MutationCtx, hash: string) {
+export async function authorize(ctx: MutationCtx, hash: string) {
   const session = await ctx.db
     .query("sessions")
     .withIndex("hash", (q) => q.eq("hash", hash))
@@ -78,7 +78,17 @@ export const list = internalMutation({
     const admin = await authorize(ctx, hash);
     return {
       email: admin.email,
-      employees: await ctx.db.query("employees").collect(),
+      employees: await Promise.all(
+        (await ctx.db.query("employees").collect()).map(async (employee) => ({
+          _id: employee._id,
+          name: employee.name,
+          active: employee.active,
+          telegramLinked: !!(await ctx.db
+            .query("telegramLinks")
+            .withIndex("employee", (q) => q.eq("employeeId", employee._id))
+            .first()),
+        })),
+      ),
       sites: await ctx.db.query("sites").collect(),
       attendance: await ctx.db.query("attendance").order("desc").take(1000),
     };
@@ -89,25 +99,46 @@ export const saveEmployee = internalMutation({
     hash: v.string(),
     id: v.optional(v.id("employees")),
     name: v.string(),
-    phone: v.string(),
     active: v.boolean(),
   },
   handler: async (ctx, { hash, id, ...input }) => {
-    await authorize(ctx, hash);
+    const admin = await authorize(ctx, hash);
     const name = input.name.trim();
-    const phone = normalizePhone(input.phone);
     if (!name || name.length > 100)
       throw new Error("Name must contain 1–100 characters.");
-    const duplicate = await ctx.db
-      .query("employees")
-      .withIndex("phone", (q) => q.eq("phone", phone))
-      .unique();
-    if (duplicate && duplicate._id !== id)
-      throw new Error("Phone is already registered.");
-    const data = { name, phone, active: input.active };
+    const data = { name, active: input.active, phone: undefined };
     if (id) {
       if (!(await ctx.db.get(id))) throw new Error("Employee not found");
       await ctx.db.patch(id, data);
+      if (!input.active) {
+        const link = await ctx.db
+          .query("telegramLinks")
+          .withIndex("employee", (q) => q.eq("employeeId", id))
+          .first();
+        if (link) await ctx.db.delete(link._id);
+        for (const code of await ctx.db
+          .query("telegramCodes")
+          .withIndex("employee", (q) => q.eq("employeeId", id))
+          .collect())
+          await ctx.db.delete(code._id);
+        const conversation = await ctx.db
+          .query("conversations")
+          .withIndex("employee", (q) => q.eq("employeeId", id))
+          .first();
+        if (conversation)
+          await ctx.db.patch(conversation._id, {
+            pending: undefined,
+            pendingAt: undefined,
+            linkId: undefined,
+          });
+        if (link)
+          await ctx.db.insert("telegramLinkAudit", {
+            employeeId: id,
+            actor: admin._id,
+            action: "deactivate",
+            at: Date.now(),
+          });
+      }
     } else await ctx.db.insert("employees", data);
   },
 });

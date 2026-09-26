@@ -1,11 +1,3 @@
-export function normalizePhone(value: string): string {
-  const phone = value.trim().replace(/[\s()+-]/g, "");
-  if (!/^[1-9]\d{7,14}$/.test(phone))
-    throw new Error(
-      "Use an international phone number (country code included).",
-    );
-  return phone;
-}
 export type Site = {
   id: string;
   name: string;

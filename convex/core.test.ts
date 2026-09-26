@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizePhone, decideAttendance } from "./core";
+import { decideAttendance } from "./core";
 const site = {
   id: "a",
   name: "Central",
@@ -18,10 +18,6 @@ const base = {
   sites: [site],
 };
 describe("attendance rules", () => {
-  it("normalizes international phone formatting and rejects national numbers", () => {
-    expect(normalizePhone("+54 9 11 1234-5678")).toBe("5491112345678");
-    expect(() => normalizePhone("1234")).toThrow();
-  });
   it("allows entry into any active nearby site", () =>
     expect(decideAttendance(base)).toEqual(site));
   it.each([

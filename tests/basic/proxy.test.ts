@@ -46,3 +46,30 @@ it("exposes no legacy endpoints", async () => {
       .status,
   ).toBe(404);
 });
+it.each([
+  ["/api/employees/link-code", "POST"],
+  ["/api/employees/revoke-link", "POST"],
+  ["/api/telegram-operations", "GET"],
+] as const)("forwards the Telegram operator route %s", async (path, method) => {
+  vi.stubEnv("APP_ORIGIN", "https://attendance.example");
+  vi.stubEnv("CONVEX_SITE_URL", "https://example.convex.site");
+  vi.stubEnv("PROXY_SECRET", "secret");
+  let forwarded = false;
+  const response = await handleRequest(
+    new Request(`https://attendance.example${path}`, {
+      method,
+      headers: { origin: "https://attendance.example" },
+      ...(method === "POST"
+        ? { body: JSON.stringify({ employeeId: "e" }) }
+        : {}),
+    }),
+    async (request) => {
+      forwarded = true;
+      expect(new URL(request.url).pathname).toBe(path);
+      expect(request.method).toBe(method);
+      return Response.json({ ok: true });
+    },
+  );
+  expect(response.status).toBe(200);
+  expect(forwarded).toBe(true);
+});
