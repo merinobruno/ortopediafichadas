@@ -1,9 +1,9 @@
 # Basic Convex attendance: Telegram cutover
 
 The Vercel basic app and Convex backend now implement private Telegram linking
-and attendance. The source change is local until deployed. The retained SQLite
-server has its own migration plan. No bot, webhook, or external send was
-configured or exercised by local tests.
+and attendance. The retained SQLite server has its own migration plan. Local
+tests do not contact Telegram or configure a live webhook; deployment and
+activation steps are below.
 
 Administrators create employees without phone numbers and issue a 10-character,
 single-use code valid for 15 minutes. They show it once to the employee, who
@@ -15,21 +15,21 @@ minutes. The app shows linked status and redacted transport operations.
 
 Vercel server-side environment:
 
-| Name | Purpose |
-| --- | --- |
+| Name            | Purpose                                     |
+| --------------- | ------------------------------------------- |
 | CONVEX_SITE_URL | Intended deployment's HTTPS Convex site URL |
-| APP_ORIGIN | Exact HTTPS application origin |
-| PROXY_SECRET | Shared private proxy secret |
+| APP_ORIGIN      | Exact HTTPS application origin              |
+| PROXY_SECRET    | Shared private proxy secret                 |
 
 Convex environment:
 
-| Name | Purpose |
-| --- | --- |
-| APP_ORIGIN | Same exact application origin |
-| PROXY_SECRET | Same shared private proxy secret |
-| TELEGRAM_BOT_TOKEN | Private credential for this environment's bot |
-| TELEGRAM_WEBHOOK_SECRET | Independent random secret sent as Telegram secret_token |
-| TELEGRAM_SEND_ENABLED | Keep false until end-to-end testing; set true deliberately |
+| Name                    | Purpose                                                    |
+| ----------------------- | ---------------------------------------------------------- |
+| APP_ORIGIN              | Same exact application origin                              |
+| PROXY_SECRET            | Same shared private proxy secret                           |
+| TELEGRAM_BOT_TOKEN      | Private credential for this environment's bot              |
+| TELEGRAM_WEBHOOK_SECRET | Independent random secret sent as Telegram secret_token    |
+| TELEGRAM_SEND_ENABLED   | Keep false until end-to-end testing; set true deliberately |
 
 Never prefix these secrets with VITE_ or place them in browser storage,
 source, logs, issues, or chat. The bot username may be shared with employees;
@@ -46,12 +46,31 @@ unused by the Convex path.
    readable. Old inbox/outbox tables remain defined solely for private
    cleanup; no old message is replayed or sent to Telegram.
 3. Set the private Telegram values in the intended Convex environment, with
-   TELEGRAM_SEND_ENABLED=false. Register the bot webhook at
-   https://<deployment>.convex.site/webhook/telegram using Telegram's
-   setWebhook method, the independent secret_token, HTTPS, and
-   allowed_updates:["message"]. Use a private credential workflow; the bot
-   token appears in the Telegram API URL and must not be pasted into shell
-   history or logs. Check Telegram's returned webhook status.
+   TELEGRAM_SEND_ENABLED=false. In the authenticated Convex Dashboard function
+   runner for that deployment, run the **internal**
+   `telegramSetup:webhookStatus` action with
+   `{"expectedUsername":"OrtopediaFichadas_bot"}`. Then run the **internal**
+   `telegramSetup:registerWebhook` action with the same argument and run status
+   again. Both actions verify the bot identity. Registration uses only this
+   deployment's built-in `CONVEX_SITE_URL` plus `/webhook/telegram`, the
+   independent `secret_token`, `allowed_updates:["message"]`, and preserves
+   pending updates. The result reports a match and pending count without
+   exposing the URL, token, secret, or Telegram error text. A matching status
+   cannot verify the secret token; registration must return `registered` to
+   confirm Telegram accepted it. If registration returns
+   `registration_unconfirmed`, check status and investigate privately before
+   another attempt because the first request may have succeeded. A private CLI
+   operator can use the following commands after selecting the correct
+   deployment:
+
+   ```powershell
+   npx convex run --deployment blissful-cheetah-426 telegramSetup:webhookStatus '{"expectedUsername":"OrtopediaFichadas_bot"}'
+   npx convex run --deployment blissful-cheetah-426 telegramSetup:registerWebhook '{"expectedUsername":"OrtopediaFichadas_bot"}'
+   ```
+
+   Never place the bot token or webhook secret in command arguments, shell
+   history, or logs.
+
 4. In nonproduction, create a test employee, issue a code, start the bot in a
    private chat, and verify one-time linking. Send entrada and a location
    within five minutes, then salida and a location. Confirm the same

@@ -23,6 +23,7 @@ import type * as telegramLinks from "../telegramLinks.js";
 import type * as telegramMessages from "../telegramMessages.js";
 import type * as telegramOperations from "../telegramOperations.js";
 import type * as telegramSend from "../telegramSend.js";
+import type * as telegramSetup from "../telegramSetup.js";
 import type * as telegramUpdate from "../telegramUpdate.js";
 
 /**
@@ -44,6 +45,7 @@ declare const fullApi: ApiFromModules<{
   telegramMessages: typeof telegramMessages;
   telegramOperations: typeof telegramOperations;
   telegramSend: typeof telegramSend;
+  telegramSetup: typeof telegramSetup;
   telegramUpdate: typeof telegramUpdate;
 }>;
 export declare const api: FilterApi<
