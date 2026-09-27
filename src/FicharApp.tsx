@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from "react";
+import { Clock3 } from "lucide-react";
 import "./fichar.css";
+import { CarahueLogo } from "./CarahueBrand";
 
 type LocationData = {
   latitude: number;
@@ -263,63 +265,66 @@ export default function FicharApp() {
 
   return (
     <main className="fichar-page">
-      <header className="fichar-header">
-        <div className="fichar-mark">C</div>
-        <div>
-          <strong>Carahue</strong>
-          <span>PERSONAS Y ASISTENCIA</span>
-        </div>
-      </header>
       <section className="fichar-card">
-        <p className="fichar-kicker">ASISTENCIA</p>
-        <h1>Fichar desde tu teléfono</h1>
-        <p className="fichar-intro">
-          Elegí una acción. Telegram pedirá tu ubicación actual para validarla
-          con la sede.
-        </p>
-        {available ? (
-          <>
-            <div className="fichar-actions">
-              <button
-                disabled={busy || reopenRequired}
-                onClick={() => void register("entrada")}
-              >
-                Registrar entrada
-              </button>
-              <button
-                disabled={busy || reopenRequired}
-                className="fichar-secondary"
-                onClick={() => void register("salida")}
-              >
-                Registrar salida
-              </button>
+        <div className="fichar-brand">
+          <CarahueLogo className="fichar-logo" />
+          <span>Gestión de asistencia</span>
+        </div>
+        <div className="fichar-content">
+          <div className="fichar-heading">
+            <Clock3 size={26} aria-hidden="true" />
+            <div>
+              <h1>Fichar desde tu teléfono</h1>
+              <p className="fichar-intro">
+                Elegí una acción. Telegram pedirá tu ubicación actual para
+                validarla con la sede.
+              </p>
             </div>
-            {busy && (
-              <p className="fichar-note" role="status">
-                Comprobando ubicación y registrando fichada…
-              </p>
-            )}
-            {receipt && (
-              <p className="fichar-success" role="status">
-                {receipt}
-              </p>
-            )}
-            {message && (
-              <p className="fichar-error" role="alert">
-                {message}
-              </p>
-            )}
-            {reopenRequired && (
-              <button className="fichar-close" onClick={() => app?.close?.()}>
-                Cerrar Fichar
-              </button>
-            )}
-          </>
-        ) : (
-          <p className="fichar-error" role="alert">
-            Abrí este botón desde Telegram en tu teléfono para fichar.
-          </p>
-        )}
+          </div>
+          {available ? (
+            <>
+              <div className="fichar-actions">
+                <button
+                  disabled={busy || reopenRequired}
+                  onClick={() => void register("entrada")}
+                >
+                  Registrar entrada
+                </button>
+                <button
+                  disabled={busy || reopenRequired}
+                  className="fichar-secondary"
+                  onClick={() => void register("salida")}
+                >
+                  Registrar salida
+                </button>
+              </div>
+              {busy && (
+                <p className="fichar-note" role="status">
+                  Comprobando ubicación y registrando fichada…
+                </p>
+              )}
+              {receipt && (
+                <p className="fichar-success" role="status">
+                  {receipt}
+                </p>
+              )}
+              {message && (
+                <p className="fichar-error" role="alert">
+                  {message}
+                </p>
+              )}
+              {reopenRequired && (
+                <button className="fichar-close" onClick={() => app?.close?.()}>
+                  Cerrar Fichar
+                </button>
+              )}
+            </>
+          ) : (
+            <p className="fichar-error" role="alert">
+              Abrí este botón desde Telegram en tu teléfono para fichar.
+            </p>
+          )}
+        </div>
       </section>
       <p className="fichar-footer">
         Si tu ubicación no está disponible o es poco precisa, revisá los

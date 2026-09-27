@@ -8,9 +8,11 @@ import {
   Pencil,
   ArrowRight,
   Send,
+  LockKeyhole,
 } from "lucide-react";
 import "./basic.css";
 import SiteLocationPicker from "./SiteLocationPicker";
+import { CarahueLogo, CarahueWave } from "./CarahueBrand";
 type Employee = {
   _id: string;
   name: string;
@@ -144,75 +146,65 @@ export default function BasicApp() {
   if (!data)
     return (
       <main className="basic-login">
-        <section className="basic-login-brand">
-          <span className="basic-wordmark">
-            carahue<span>®</span>
-          </span>
-          <p>Ortopedia & salud</p>
-          <div>
-            <span className="basic-eyebrow">ASISTENCIA DEL EQUIPO</span>
-            <h1>
-              Cada jornada,
-              <br />
-              en su lugar.
-            </h1>
-            <p>
-              Empleados, sedes y fichadas.
-              <br />
-              Lo esencial para el día a día.
-            </p>
+        <div className="basic-login-card">
+          <div className="basic-auth-brand">
+            <CarahueLogo className="basic-auth-logo" />
+            <span>Gestión de asistencia</span>
           </div>
-          <small>Carahue · Gestión de asistencia</small>
-        </section>
-        <section className="basic-login-form">
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (busy) return;
-              const form = new FormData(event.currentTarget);
-              void perform(async () => {
-                await request("login", {
-                  email: form.get("email"),
-                  password: form.get("password"),
+          <section className="basic-login-form">
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (busy) return;
+                const form = new FormData(event.currentTarget);
+                void perform(async () => {
+                  await request("login", {
+                    email: form.get("email"),
+                    password: form.get("password"),
+                  });
+                  await reload();
                 });
-                await reload();
-              });
-            }}
-          >
-            <span className="basic-eyebrow">ACCESO ADMINISTRATIVO</span>
-            <h2>Bienvenido</h2>
-            <p>Ingresá con tu cuenta para continuar.</p>
-            {error && (
-              <p className="basic-error" role="alert">
-                {error}
-              </p>
-            )}
-            <label>
-              Correo electrónico
-              <input
-                name="email"
-                type="email"
-                autoComplete="username"
-                required
-                maxLength={254}
-              />
-            </label>
-            <label>
-              Contraseña
-              <input
-                name="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                maxLength={128}
-              />
-            </label>
-            <button className="basic-primary" disabled={busy}>
-              {busy ? "Ingresando…" : "Ingresar"}
-              <ArrowRight size={18} aria-hidden="true" />
-            </button>
-          </form>
-        </section>
+              }}
+            >
+              <div className="basic-auth-heading">
+                <LockKeyhole size={25} aria-hidden="true" />
+                <div>
+                  <h1>Ingresar a Asistencia</h1>
+                  <p>Acceso exclusivo para personal de Carahue.</p>
+                </div>
+              </div>
+              {error && (
+                <p className="basic-error" role="alert">
+                  {error}
+                </p>
+              )}
+              <label>
+                Correo electrónico
+                <input
+                  name="email"
+                  type="email"
+                  autoComplete="username"
+                  required
+                  maxLength={254}
+                />
+              </label>
+              <label>
+                Contraseña
+                <input
+                  name="password"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  maxLength={128}
+                />
+              </label>
+              <button className="basic-primary" disabled={busy}>
+                {busy ? "Ingresando…" : "Ingresar"}
+                <ArrowRight size={18} aria-hidden="true" />
+              </button>
+            </form>
+          </section>
+        </div>
       </main>
     );
   const selected = editing && editing !== "new" ? editing : null;
@@ -224,12 +216,11 @@ export default function BasicApp() {
   return (
     <div className="basic-shell">
       <aside className="basic-sidebar">
-        <div>
-          <span className="basic-wordmark">
-            carahue<span>®</span>
-          </span>
-          <p>Asistencia</p>
+        <div className="basic-brand-cap">
+          <CarahueLogo className="basic-brand-logo" />
+          <CarahueWave className="basic-brand-wave" />
         </div>
+        <span className="basic-workspace-label">ESPACIO DE TRABAJO</span>
         <nav aria-label="Secciones">
           {(["employees", "sites", "attendance", "telegram"] as Section[]).map(
             (key) => {
@@ -286,9 +277,12 @@ export default function BasicApp() {
         </div>
       </aside>
       <main className="basic-main">
-        <header>
+        <div className="basic-topline">
+          <span>Carahue / Gestión de asistencia</span>
+          <span className="basic-topline-page">{names[section]}</span>
+        </div>
+        <header className="basic-page-header">
           <div>
-            <span className="basic-eyebrow">CARAHUE / ASISTENCIA</span>
             <h1>{names[section]}</h1>
             <p>
               {section === "employees"
