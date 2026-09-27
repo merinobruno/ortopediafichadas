@@ -23,10 +23,13 @@ it("authenticates exact raw Telegram initData and rejects tampering, expiry and 
   ).rejects.toThrow();
   await expect(
     verifyTelegramInitData(signed(8, Math.floor(now / 1000) - 301), token, now),
-  ).rejects.toThrow();
+  ).rejects.toMatchObject({ code: "expired" });
   await expect(
     verifyTelegramInitData(signed(8, Math.floor(now / 1000) + 31), token, now),
-  ).rejects.toThrow();
+  ).rejects.toMatchObject({ code: "invalid" });
+  await expect(
+    verifyTelegramInitData(signed().replace("Ana", "Eve"), token, now),
+  ).rejects.toMatchObject({ code: "invalid" });
   await expect(
     verifyTelegramInitData(`${signed()}&user=duplicate`, token, now),
   ).rejects.toThrow();
@@ -129,19 +132,19 @@ it("rejects expired, revoked, relinked, inaccurate and out-of-radius submissions
       ...base,
       accuracy: 101,
     }),
-  ).toMatchObject({ ok: false });
+  ).toMatchObject({ ok: false, reason: "accuracy_invalid" });
   expect(
     await t.mutation(internal.telegramPhone.submitChallenge, {
       ...base,
       latitude: -35,
     }),
-  ).toMatchObject({ ok: false });
+  ).toMatchObject({ ok: false, reason: "outside_active_site" });
   expect(
     await t.mutation(internal.telegramPhone.submitChallenge, {
       ...base,
       now: now + 61000,
     }),
-  ).toMatchObject({ ok: false });
+  ).toMatchObject({ ok: false, reason: "challenge_expired" });
   await t.run(async (ctx) => {
     await ctx.db.delete(linkId);
     await ctx.db.insert("telegramLinks", {
@@ -153,10 +156,97 @@ it("rejects expired, revoked, relinked, inaccurate and out-of-radius submissions
   });
   expect(
     await t.mutation(internal.telegramPhone.submitChallenge, base),
-  ).toMatchObject({ ok: false });
+  ).toMatchObject({ ok: false, reason: "link_inactive" });
   expect(
     await t.run((ctx) => ctx.db.query("attendance").collect()),
   ).toHaveLength(0);
+});
+
+it("returns distinct reasons for attendance state, site, and location failures", async () => {
+  const cases = [
+    { state: "open", kind: "entrada", reason: "entry_already_open" },
+    { state: "closed", kind: "salida", reason: "entry_missing" },
+    { state: "open", kind: "salida", latitude: -35, reason: "exit_wrong_site" },
+    {
+      state: "closed",
+      kind: "entrada",
+      latitude: -35,
+      reason: "outside_active_site",
+    },
+    {
+      state: "closed",
+      kind: "entrada",
+      last: true,
+      reason: "attendance_out_of_order",
+    },
+    {
+      state: "closed",
+      kind: "entrada",
+      latitude: 91,
+      reason: "coordinates_invalid",
+    },
+    {
+      state: "closed",
+      kind: "entrada",
+      accuracy: 101,
+      reason: "accuracy_invalid",
+    },
+    {
+      state: "closed",
+      kind: "entrada",
+      latitude: -34.5995,
+      accuracy: 60,
+      reason: "accuracy_outside_site",
+    },
+  ] as const;
+  for (const [index, scenario] of cases.entries()) {
+    const { t, employeeId, siteId, linkId } = await prepared();
+    const now = Date.now();
+    if (scenario.state === "open")
+      await t.run((ctx) =>
+        ctx.db.insert("conversations", {
+          employeeId,
+          linkId,
+          lastTimestamp: 0,
+          openSiteId: siteId,
+        }),
+      );
+    if ("last" in scenario)
+      await t.run((ctx) =>
+        ctx.db.insert("attendance", {
+          employeeId,
+          siteId,
+          employeeName: "Ana",
+          siteName: "Central",
+          kind: "entrada",
+          timestamp: now + 2000,
+          latitude: -34.6,
+          longitude: -58.4,
+          messageId: `prior:${index}`,
+        }),
+      );
+    const digest = index.toString(16).padStart(64, "0");
+    await t.mutation(internal.telegramPhone.issueChallenge, {
+      userId: "8",
+      digest,
+      kind: scenario.kind,
+      now,
+    });
+    expect(
+      await t.mutation(internal.telegramPhone.submitChallenge, {
+        userId: "8",
+        digest,
+        latitude: "latitude" in scenario ? scenario.latitude : -34.6,
+        longitude: -58.4,
+        accuracy: "accuracy" in scenario ? scenario.accuracy : 12,
+        now: now + 1000,
+      }),
+      scenario.reason,
+    ).toMatchObject({ ok: false, reason: scenario.reason });
+    expect(
+      await t.run((ctx) => ctx.db.query("attendance").collect()),
+    ).toHaveLength("last" in scenario ? 1 : 0);
+  }
 });
 
 it("writes once for concurrent submissions and requires exit at the open site", async () => {

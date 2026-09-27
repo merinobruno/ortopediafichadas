@@ -1,5 +1,11 @@
 const encoder = new TextEncoder();
 
+export class TelegramInitDataError extends Error {
+  constructor(readonly code: "invalid" | "expired") {
+    super("Invalid Telegram identity");
+  }
+}
+
 async function hmac(key: Uint8Array | string, value: string) {
   const bytes =
     typeof key === "string" ? encoder.encode(key) : new Uint8Array(key.length);
@@ -22,12 +28,12 @@ export async function verifyTelegramInitData(
   now = Date.now(),
 ): Promise<string> {
   if (!token || !raw || raw.length > 4096)
-    throw new Error("Invalid Telegram identity");
+    throw new TelegramInitDataError("invalid");
   const fields = new URLSearchParams(raw);
   const values = new Map<string, string>();
   for (const [key, value] of fields) {
     if (!/^[a-z_]+$/.test(key) || values.has(key))
-      throw new Error("Invalid Telegram identity");
+      throw new TelegramInitDataError("invalid");
     values.set(key, value);
   }
   const supplied = values.get("hash");
@@ -40,10 +46,8 @@ export async function verifyTelegramInitData(
     !/^\d{10}$/.test(date) ||
     !user
   )
-    throw new Error("Invalid Telegram identity");
+    throw new TelegramInitDataError("invalid");
   const age = now - Number(date) * 1000;
-  if (!Number.isFinite(age) || age > 300000 || age < -30000)
-    throw new Error("Invalid Telegram identity");
   values.delete("hash");
   const check = [...values]
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -57,18 +61,21 @@ export async function verifyTelegramInitData(
   let difference = 0;
   for (let i = 0; i < expected.length; i++)
     difference |= expected[i] ^ actual[i];
-  if (difference !== 0) throw new Error("Invalid Telegram identity");
+  if (difference !== 0) throw new TelegramInitDataError("invalid");
   let parsed: unknown;
   try {
     parsed = JSON.parse(user);
   } catch {
-    throw new Error("Invalid Telegram identity");
+    throw new TelegramInitDataError("invalid");
   }
   const id =
     parsed && typeof parsed === "object" && "id" in parsed
       ? parsed.id
       : undefined;
   if (typeof id !== "number" || !Number.isSafeInteger(id) || id <= 0)
-    throw new Error("Invalid Telegram identity");
+    throw new TelegramInitDataError("invalid");
+  if (!Number.isFinite(age) || age < -30000)
+    throw new TelegramInitDataError("invalid");
+  if (age > 300000) throw new TelegramInitDataError("expired");
   return String(id);
 }

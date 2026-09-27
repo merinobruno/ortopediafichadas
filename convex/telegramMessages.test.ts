@@ -156,4 +156,7 @@ it("rejects stale location without opening an attendance record", async () => {
   expect(
     await t.run((ctx) => ctx.db.query("attendance").collect()),
   ).toHaveLength(0);
+  const reply = await t.run((ctx) => ctx.db.query("telegramOutbox").first());
+  expect(reply?.text).toContain("Tocá Fichar");
+  expect(reply?.text).not.toContain("Enviá un nuevo comando y ubicación");
 });

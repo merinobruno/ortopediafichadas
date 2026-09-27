@@ -219,14 +219,21 @@ it("serves phone check-in without an admin cookie only for signed linked Telegra
       )
     ).status,
   ).toBe(403);
-  expect(
-    (
-      await request("/api/phone/challenge", {
-        initData: initData.replace("Ana", "Eve"),
-        kind: "entrada",
-      })
-    ).status,
-  ).toBe(401);
+  const invalid = await request("/api/phone/challenge", {
+    initData: initData.replace("Ana", "Eve"),
+    kind: "entrada",
+  });
+  expect(invalid.status).toBe(401);
+  expect(await invalid.json()).toEqual({ error: "telegram_auth_invalid" });
+  const oldDate = authDate - 301;
+  const oldCheck = `auth_date=${oldDate}\nuser=${user}`;
+  const oldHash = createHmac("sha256", secret).update(oldCheck).digest("hex");
+  const expired = await request("/api/phone/challenge", {
+    initData: `auth_date=${oldDate}&user=${encodeURIComponent(user)}&hash=${oldHash}`,
+    kind: "entrada",
+  });
+  expect(expired.status).toBe(401);
+  expect(await expired.json()).toEqual({ error: "telegram_auth_expired" });
   const issued = await request("/api/phone/challenge", {
     initData,
     kind: "entrada",

@@ -25,14 +25,20 @@ const webApp = () =>
   (window as Window & { Telegram?: { WebApp?: TelegramWebApp } }).Telegram
     ?.WebApp;
 
-class ReopenRequired extends Error {}
+class DisplayError extends Error {}
+class ReopenRequired extends DisplayError {}
+
+const uncertainSubmit =
+  "No pudimos confirmar si la fichada se registró. Pedí a RRHH que revise la asistencia antes de volver a intentar.";
+const unavailableService =
+  "No pudimos iniciar la fichada. Intentá de nuevo; si sigue pasando, avisá a RRHH.";
 
 async function currentTelegramLocation(
   app: TelegramWebApp,
 ): Promise<LocationData> {
   const manager = app.LocationManager;
   if (!manager)
-    throw new Error(
+    throw new DisplayError(
       "Tu Telegram no ofrece ubicación. Actualizá la app e intentá de nuevo.",
     );
   let timeout: number | undefined;
@@ -78,17 +84,22 @@ async function currentTelegramLocation(
     if (!manager.isInited)
       await waitForSdk<void>("preparar", (done) => manager.init(done));
     if (!manager.isLocationAvailable)
-      throw new Error(
+      throw new DisplayError(
         "La ubicación no está disponible en este teléfono. Revisá los permisos de Telegram.",
       );
     const result = await waitForSdk<LocationData | null>("entregar", (done) =>
       manager.getLocation(done),
     );
     if (!result)
-      throw new Error(
+      throw new DisplayError(
         "No se obtuvo la ubicación. Permití el acceso en Telegram e intentá de nuevo.",
       );
     location = result;
+  } catch (error) {
+    if (error instanceof DisplayError) throw error;
+    throw new DisplayError(
+      "Telegram no pudo obtener la ubicación. Revisá los permisos y volvé a intentar.",
+    );
   } finally {
     window.clearTimeout(timeout);
     document.removeEventListener("visibilitychange", onVisibility);
@@ -99,45 +110,87 @@ async function currentTelegramLocation(
     (location.horizontal_accuracy ?? 0) <= 0 ||
     location.horizontal_accuracy! > 100
   )
-    throw new Error(
+    throw new DisplayError(
       "La ubicación es poco precisa. Acercate a una ventana y volvé a intentar.",
     );
   return location;
 }
 
 async function post(path: string, body: object) {
-  const response = await fetch(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    credentials: "omit",
-    body: JSON.stringify(body),
-  });
+  const submitting = path === "/api/phone/submit";
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "omit",
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new DisplayError(submitting ? uncertainSubmit : unavailableService);
+  }
   const data: unknown = await response.json().catch(() => null);
   if (!data || typeof data !== "object")
-    throw new Error("El servicio no está disponible. Intentá nuevamente.");
+    throw new DisplayError(submitting ? uncertainSubmit : unavailableService);
   if (!response.ok) {
     const error =
       "error" in data && typeof data.error === "string" ? data.error : "";
-    if (error === "Abrí Fichar desde Telegram nuevamente.")
+    if (error === "telegram_auth_expired")
       throw new ReopenRequired(
-        "La sesión de Telegram venció. Abrí Fichar de nuevo desde el bot.",
+        "Esta sesión de Telegram venció. Cerrá Fichar y volvé a abrirlo desde el bot.",
       );
-    if (error.includes("Telegram")) throw new Error(error);
+    if (
+      error === "telegram_auth_invalid" ||
+      error === "Abrí Fichar desde Telegram nuevamente."
+    )
+      throw new ReopenRequired(
+        "No pudimos verificar tu acceso desde Telegram. Cerrá Fichar y volvé a abrirlo desde el bot.",
+      );
+    if (
+      error === "Tu cuenta de Telegram no está vinculada a un empleado activo."
+    )
+      throw new DisplayError(
+        "Tu cuenta de Telegram no está vinculada a un empleado activo. Pedí ayuda a RRHH.",
+      );
     if (error === "link_inactive")
-      throw new Error(
+      throw new DisplayError(
         "Tu cuenta de Telegram ya no está vinculada. Consultá a RRHH.",
       );
-    if (error === "location_invalid" || error === "accuracy_outside_site")
-      throw new Error(
-        "La ubicación es poco precisa o está fuera de la sede. Intentá de nuevo desde el lugar de trabajo.",
+    if (error === "coordinates_invalid")
+      throw new DisplayError(
+        "Telegram entregó una ubicación inválida. Cerrá Fichar y volvé a abrirlo desde el bot.",
       );
-    if (error === "attendance_rejected")
-      throw new Error(
-        "La fichada no corresponde al estado actual. Consultá a RRHH si ya tenés una entrada abierta.",
+    if (error === "accuracy_invalid")
+      throw new DisplayError(
+        "La ubicación no tiene precisión suficiente. Esperá una ubicación más precisa y volvé a intentar.",
       );
-    if (error === "challenge_expired" || error === "challenge_invalid")
-      throw new Error("La confirmación venció. Intentá de nuevo.");
-    throw new Error("No se pudo registrar la fichada. Intentá de nuevo.");
+    if (error === "accuracy_outside_site")
+      throw new DisplayError(
+        "No podemos confirmar que estés dentro de la sede con la precisión actual. Acercate al centro de la sede o esperá una ubicación más precisa.",
+      );
+    const attendanceMessages: Record<string, string> = {
+      entry_already_open:
+        "Ya tenés una entrada abierta. Si no corresponde, consultá a RRHH.",
+      entry_missing:
+        "No hay una entrada abierta para registrar la salida. Consultá a RRHH si ya fichaste.",
+      exit_wrong_site:
+        "La salida debe registrarse en la sede donde hiciste la entrada. Volvé a esa sede o consultá a RRHH.",
+      outside_active_site:
+        "Tu ubicación está fuera de las sedes habilitadas. Acercate a una sede habilitada y volvé a intentar.",
+      attendance_out_of_order:
+        "La hora de esta fichada no sigue a la última registrada. Consultá a RRHH antes de reintentar.",
+    };
+    if (Object.hasOwn(attendanceMessages, error))
+      throw new DisplayError(attendanceMessages[error]);
+    if (error === "challenge_expired")
+      throw new DisplayError(
+        "La confirmación venció. Tocá Entrada o Salida para iniciar otra.",
+      );
+    if (error === "challenge_invalid")
+      throw new DisplayError(
+        "No pudimos confirmar esta solicitud. Pedí a RRHH que revise la asistencia antes de volver a intentar.",
+      );
+    throw new DisplayError(submitting ? uncertainSubmit : unavailableService);
   }
   return data;
 }
@@ -159,17 +212,19 @@ export default function FicharApp() {
 
   async function register(kind: "entrada" | "salida") {
     if (!app || busy || reopenRequired) return;
+    let phase: "location" | "challenge" | "submit" = "location";
     setBusy(true);
     setMessage("");
     setReceipt("");
     try {
       const location = await currentTelegramLocation(app);
+      phase = "challenge";
       const challenge = (await post("/api/phone/challenge", {
         initData: app.initData,
         kind,
       })) as { challenge?: string };
-      if (!challenge.challenge)
-        throw new Error("No se pudo confirmar la solicitud. Intentá de nuevo.");
+      if (!challenge.challenge) throw new DisplayError(unavailableService);
+      phase = "submit";
       const result = (await post("/api/phone/submit", {
         initData: app.initData,
         challenge: challenge.challenge,
@@ -177,8 +232,15 @@ export default function FicharApp() {
         longitude: location.longitude,
         accuracy: location.horizontal_accuracy,
       })) as { kind?: string; siteName?: string; timestamp?: number };
-      if (!result.kind || !result.siteName || !result.timestamp)
-        throw new Error("No se pudo confirmar la fichada.");
+      if (
+        result.kind !== kind ||
+        typeof result.siteName !== "string" ||
+        !result.siteName.trim() ||
+        typeof result.timestamp !== "number" ||
+        !Number.isFinite(result.timestamp) ||
+        !Number.isFinite(new Date(result.timestamp).getTime())
+      )
+        throw new DisplayError(uncertainSubmit);
       const label = result.kind === "entrada" ? "Entrada" : "Salida";
       setReceipt(
         `${label} registrada en ${result.siteName} · ${new Date(result.timestamp).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}`,
@@ -186,9 +248,13 @@ export default function FicharApp() {
     } catch (error) {
       if (error instanceof ReopenRequired) setReopenRequired(true);
       setMessage(
-        error instanceof Error
+        error instanceof DisplayError
           ? error.message
-          : "No se pudo registrar la fichada. Intentá de nuevo.",
+          : phase === "submit"
+            ? uncertainSubmit
+            : phase === "challenge"
+              ? unavailableService
+              : "Telegram no pudo obtener la ubicación. Revisá los permisos y volvé a intentar.",
       );
     } finally {
       setBusy(false);

@@ -9,7 +9,7 @@ const translations: Record<string, string> = {
   "Employee is not active.": "El empleado no está activo.",
   "Invalid location.": "La ubicación no es válida.",
   "Stale or out-of-order message. Send a new command and location.":
-    "El mensaje venció o llegó fuera de orden. Enviá un nuevo comando y ubicación.",
+    "El mensaje venció o llegó fuera de orden. Tocá Fichar para registrar tu asistencia.",
   "An entry is already open.": "Ya tenés una entrada abierta.",
   "There is no open entry.": "No tenés una entrada abierta.",
   "Exit must be at the entry site, inside its radius.":
@@ -163,7 +163,7 @@ async function processOne(ctx: MutationCtx, input: Doc<"telegramInbox">) {
         input.updateId <= (state.lastUpdateId ?? -1))
     )
       throw new AttendanceRejection(
-        "El mensaje venció o llegó fuera de orden. Enviá un nuevo comando y ubicación.",
+        "El mensaje venció o llegó fuera de orden. Tocá Fichar para registrar tu asistencia.",
       );
     await ctx.db.patch(state._id, {
       lastTimestamp: input.timestamp,

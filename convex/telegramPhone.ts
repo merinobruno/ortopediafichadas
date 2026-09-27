@@ -3,13 +3,14 @@ import { v } from "convex/values";
 import { decideAttendance, distance, validCoordinates } from "./core";
 
 const kind = v.union(v.literal("entrada"), v.literal("salida"));
-const knownAttendanceErrors = new Set([
-  "An entry is already open.",
-  "There is no open entry.",
-  "Exit must be at the entry site, inside its radius.",
-  "Location is outside every active site.",
-  "Stale or out-of-order message. Send a new command and location.",
-]);
+const attendanceReasons = {
+  "An entry is already open.": "entry_already_open",
+  "There is no open entry.": "entry_missing",
+  "Exit must be at the entry site, inside its radius.": "exit_wrong_site",
+  "Location is outside every active site.": "outside_active_site",
+  "Stale or out-of-order message. Send a new command and location.":
+    "attendance_out_of_order",
+} as const;
 
 export const issueChallenge = internalMutation({
   args: { userId: v.string(), digest: v.string(), kind, now: v.number() },
@@ -104,13 +105,14 @@ export const submitChallenge = internalMutation({
     }
     if (input.now >= challenge.expiresAt)
       return { ok: false as const, reason: "challenge_expired" };
+    if (!validCoordinates(input.latitude, input.longitude))
+      return { ok: false as const, reason: "coordinates_invalid" };
     if (
-      !validCoordinates(input.latitude, input.longitude) ||
       !Number.isFinite(input.accuracy) ||
       input.accuracy <= 0 ||
       input.accuracy > 100
     )
-      return { ok: false as const, reason: "location_invalid" };
+      return { ok: false as const, reason: "accuracy_invalid" };
     const state = await ctx.db
       .query("conversations")
       .withIndex("employee", (q) => q.eq("employeeId", employee._id))
@@ -135,8 +137,15 @@ export const submitChallenge = internalMutation({
         sites: sites.map((s) => ({ ...s, id: s._id })),
       });
     } catch (error) {
-      if (error instanceof Error && knownAttendanceErrors.has(error.message))
-        return { ok: false as const, reason: "attendance_rejected" };
+      if (
+        error instanceof Error &&
+        Object.hasOwn(attendanceReasons, error.message)
+      )
+        return {
+          ok: false as const,
+          reason:
+            attendanceReasons[error.message as keyof typeof attendanceReasons],
+        };
       throw error;
     }
     // The reported uncertainty circle must fit within the site boundary.

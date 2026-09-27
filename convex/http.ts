@@ -4,7 +4,10 @@ import { internal } from "./_generated/api";
 import { z } from "zod";
 import { parseTelegramUpdate, linkCodeFromText } from "./telegramUpdate";
 import { sha256 } from "./telegramLinks";
-import { verifyTelegramInitData } from "./telegramPhoneAuth";
+import {
+  TelegramInitDataError,
+  verifyTelegramInitData,
+} from "./telegramPhoneAuth";
 const http = httpRouter();
 const json = (
   value: unknown,
@@ -65,8 +68,9 @@ const apiHandler = httpAction(async (ctx, request) => {
       let userId: string;
       try {
         userId = await verifyTelegramInitData(body.initData, botToken);
-      } catch {
-        return json({ error: "Abrí Fichar desde Telegram nuevamente." }, 401);
+      } catch (error) {
+        if (!(error instanceof TelegramInitDataError)) throw error;
+        return json({ error: `telegram_auth_${error.code}` }, 401);
       }
       const bytes = crypto.getRandomValues(new Uint8Array(32));
       const challenge = Array.from(bytes, (byte) =>
@@ -113,8 +117,9 @@ const apiHandler = httpAction(async (ctx, request) => {
       let userId: string;
       try {
         userId = await verifyTelegramInitData(body.initData, botToken);
-      } catch {
-        return json({ error: "Abrí Fichar desde Telegram nuevamente." }, 401);
+      } catch (error) {
+        if (!(error instanceof TelegramInitDataError)) throw error;
+        return json({ error: `telegram_auth_${error.code}` }, 401);
       }
       const result = await ctx.runMutation(
         internal.telegramPhone.submitChallenge,
