@@ -1,8 +1,8 @@
 import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { validCoordinates } from "./core";
-import type { MutationCtx } from "./_generated/server";
-export async function authorize(ctx: MutationCtx, hash: string) {
+import type { MutationCtx, QueryCtx } from "./_generated/server";
+export async function authorize(ctx: MutationCtx | QueryCtx, hash: string) {
   const session = await ctx.db
     .query("sessions")
     .withIndex("hash", (q) => q.eq("hash", hash))
@@ -13,6 +13,13 @@ export async function authorize(ctx: MutationCtx, hash: string) {
   if (!admin?.active) throw new Error("Unauthorized");
   return admin;
 }
+export const requireAdminSession = internalQuery({
+  args: { hash: v.string() },
+  handler: async (ctx, { hash }) => {
+    await authorize(ctx, hash);
+    return true;
+  },
+});
 export const loginAttempt = internalMutation({
   args: { email: v.string() },
   handler: async (ctx, { email }) => {
@@ -51,6 +58,25 @@ export const provision = internalMutation({
     return ctx.db.insert("admins", { ...args, active: true });
   },
 });
+export const createAdmin = internalMutation({
+  args: { hash: v.string(), email: v.string(), passwordHash: v.string() },
+  handler: async (ctx, { hash, email, passwordHash }) => {
+    await authorize(ctx, hash);
+    if (
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
+      email !== email.trim().toLowerCase() ||
+      email.length > 254
+    )
+      return { ok: false as const, reason: "invalid" as const };
+    const existing = await ctx.db
+      .query("admins")
+      .withIndex("email", (q) => q.eq("email", email))
+      .first();
+    if (existing) return { ok: false as const, reason: "duplicate" as const };
+    await ctx.db.insert("admins", { email, passwordHash, active: true });
+    return { ok: true as const };
+  },
+});
 export const createSession = internalMutation({
   args: { adminId: v.id("admins"), hash: v.string() },
   handler: async (ctx, args) => {
@@ -78,6 +104,13 @@ export const list = internalMutation({
     const admin = await authorize(ctx, hash);
     return {
       email: admin.email,
+      admins: (await ctx.db.query("admins").collect())
+        .map((account) => ({
+          _id: account._id,
+          email: account.email,
+          active: account.active,
+        }))
+        .sort((a, b) => a.email.localeCompare(b.email)),
       employees: await Promise.all(
         (await ctx.db.query("employees").collect()).map(async (employee) => ({
           _id: employee._id,

@@ -142,7 +142,7 @@ end-to-end verification is claimed by this source change.
 ## Administrator bootstrap, sessions, and proxy
 
 The Vercel serverless API proxies same-origin requests to Convex HTTP actions.
-Its allowlist includes login, logout, data, employee, site, Telegram link,
+Its allowlist includes login, logout, data, RRHH account creation, employee, site, Telegram link,
 phone challenge/submit, and redacted operation endpoints. Browser mutations require the matching
 `APP_ORIGIN`. Cookies are Secure, HttpOnly, and SameSite=Strict; opaque
 administrator sessions expire after eight hours. There is no public signup.
@@ -155,7 +155,12 @@ administrator exists, stores a salted scrypt hash, and returns only
 `npx convex run --prod auth:bootstrapAdmin` with privately supplied
 arguments. Prefer the Dashboard to avoid shell history. Setting
 `admins.active=false` privately invalidates that administrator's sessions.
-The basic app has no account management or password reset screen.
+After bootstrap, every signed-in active administrator can open **Cuentas de
+RRHH** to list administrative email addresses and create another active
+administrator with the same permissions. Creation requires a unique normalized
+email and a 14–128 character password; responses and lists omit credentials
+and password hashes. Employees do not receive web accounts and continue to
+check in through Telegram. There is no public signup or password reset screen.
 
 ## Build and deployment context
 

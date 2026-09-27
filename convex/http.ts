@@ -163,6 +163,29 @@ const apiHandler = httpAction(async (ctx, request) => {
       return json(
         await ctx.runMutation(internal.data.list, { hash: sessionHash }),
       );
+    if (path === "/api/admins" && request.method === "POST") {
+      const data = z
+        .object({
+          email: z.string().max(254),
+          password: z.string().max(128),
+        })
+        .strict()
+        .parse(await request.json());
+      const result = await ctx.runAction(internal.auth.createAdminAccount, {
+        ...data,
+        hash: sessionHash,
+      });
+      if (result.ok) return json({ ok: true });
+      return result.reason === "duplicate"
+        ? json({ error: "Ya existe una cuenta de RRHH con ese correo." }, 409)
+        : json(
+            {
+              error:
+                "Ingresá un correo válido y una contraseña de 14 a 128 caracteres.",
+            },
+            400,
+          );
+    }
     if (path === "/api/employees" && request.method === "POST") {
       const data = z
         .object({

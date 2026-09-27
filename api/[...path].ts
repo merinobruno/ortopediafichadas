@@ -2,6 +2,7 @@ const allowed = new Map([
   ["/api/login", "POST"],
   ["/api/logout", "POST"],
   ["/api/data", "GET"],
+  ["/api/admins", "POST"],
   ["/api/employees", "POST"],
   ["/api/sites", "POST"],
   ["/api/employees/link-code", "POST"],

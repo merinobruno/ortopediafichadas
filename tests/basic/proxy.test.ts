@@ -47,6 +47,7 @@ it("exposes no legacy endpoints", async () => {
   ).toBe(404);
 });
 it.each([
+  ["/api/admins", "POST"],
   ["/api/employees/link-code", "POST"],
   ["/api/employees/revoke-link", "POST"],
   ["/api/telegram-operations", "GET"],

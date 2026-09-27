@@ -9,6 +9,7 @@ import {
   ArrowRight,
   Send,
   LockKeyhole,
+  ShieldCheck,
 } from "lucide-react";
 import "./basic.css";
 import SiteLocationPicker from "./SiteLocationPicker";
@@ -36,13 +37,15 @@ type Attendance = {
   kind: "entrada" | "salida";
   timestamp: number;
 };
+type AdminAccount = { _id: string; email: string; active: boolean };
 type Data = {
   email: string;
+  admins?: AdminAccount[];
   employees: Employee[];
   sites: Site[];
   attendance: Attendance[];
 };
-type Section = "employees" | "sites" | "attendance" | "telegram";
+type Section = "employees" | "sites" | "attendance" | "telegram" | "admins";
 type Operations = {
   inbound: {
     updateId: number;
@@ -86,6 +89,7 @@ const names = {
   sites: "Sedes",
   attendance: "Fichadas",
   telegram: "Telegram",
+  admins: "Cuentas de RRHH",
 };
 const date = (timestamp: number) =>
   new Intl.DateTimeFormat("es-AR", {
@@ -222,43 +226,51 @@ export default function BasicApp() {
         </div>
         <span className="basic-workspace-label">ESPACIO DE TRABAJO</span>
         <nav aria-label="Secciones">
-          {(["employees", "sites", "attendance", "telegram"] as Section[]).map(
-            (key) => {
-              const Icon =
-                key === "employees"
-                  ? Users
-                  : key === "sites"
-                    ? Building2
-                    : key === "attendance"
-                      ? Clock3
-                      : Send;
-              return (
-                <a
-                  key={key}
-                  href={`#${key}`}
-                  aria-current={section === key ? "page" : undefined}
-                  aria-disabled={busy || undefined}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    if (busy) return;
-                    setSection(key);
-                    setEditing(null);
-                    setError("");
-                    setNotice("");
-                    setFilter("");
-                    setVisibleCode(null);
-                    if (key === "telegram")
-                      void perform(async () =>
-                        setOperations(await request("telegram-operations")),
-                      );
-                  }}
-                >
-                  <Icon size={19} aria-hidden="true" />
-                  {names[key]}
-                </a>
-              );
-            },
-          )}
+          {(
+            [
+              "employees",
+              "sites",
+              "attendance",
+              "telegram",
+              "admins",
+            ] as Section[]
+          ).map((key) => {
+            const Icon =
+              key === "employees"
+                ? Users
+                : key === "sites"
+                  ? Building2
+                  : key === "attendance"
+                    ? Clock3
+                    : key === "telegram"
+                      ? Send
+                      : ShieldCheck;
+            return (
+              <a
+                key={key}
+                href={`#${key}`}
+                aria-current={section === key ? "page" : undefined}
+                aria-disabled={busy || undefined}
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (busy) return;
+                  setSection(key);
+                  setEditing(null);
+                  setError("");
+                  setNotice("");
+                  setFilter("");
+                  setVisibleCode(null);
+                  if (key === "telegram")
+                    void perform(async () =>
+                      setOperations(await request("telegram-operations")),
+                    );
+                }}
+              >
+                <Icon size={19} aria-hidden="true" />
+                {names[key]}
+              </a>
+            );
+          })}
         </nav>
         <div className="basic-account">
           <small>{data.email}</small>
@@ -291,7 +303,9 @@ export default function BasicApp() {
                   ? "Los lugares donde empieza y termina cada jornada."
                   : section === "attendance"
                     ? "Entradas y salidas registradas por Telegram."
-                    : "Estado reciente de mensajes y respuestas del bot."}
+                    : section === "telegram"
+                      ? "Estado reciente de mensajes y respuestas del bot."
+                      : "Accesos administrativos para el equipo de Recursos Humanos."}
             </p>
           </div>
           {(section === "employees" || section === "sites") && !editing && (
@@ -409,7 +423,93 @@ export default function BasicApp() {
             </div>
           </form>
         )}
-        {section === "telegram" ? (
+        {section === "admins" ? (
+          <section className="basic-admin-accounts">
+            <form
+              className="basic-editor"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (busy) return;
+                const formElement = event.currentTarget;
+                const form = new FormData(formElement);
+                void perform(async () => {
+                  await request("admins", {
+                    email: form.get("email"),
+                    password: form.get("password"),
+                  });
+                  formElement.reset();
+                  await reload();
+                  setNotice("Cuenta de RRHH creada.");
+                });
+              }}
+            >
+              <h2>Agregar cuenta de RRHH</h2>
+              <p className="basic-admin-accounts-intro">
+                Todas las cuentas de RRHH tienen los mismos permisos de
+                administración. Los empleados fichan desde Telegram y no
+                ingresan a esta página.
+              </p>
+              <div className="basic-fields">
+                <label>
+                  Correo de la nueva cuenta
+                  <input
+                    name="email"
+                    type="email"
+                    autoComplete="off"
+                    required
+                    maxLength={254}
+                  />
+                </label>
+                <label>
+                  Contraseña para la nueva cuenta
+                  <input
+                    name="password"
+                    type="password"
+                    autoComplete="new-password"
+                    required
+                    minLength={14}
+                    maxLength={128}
+                  />
+                </label>
+              </div>
+              <p className="basic-footnote">
+                La contraseña debe tener entre 14 y 128 caracteres.
+              </p>
+              <div className="basic-actions">
+                <button className="basic-primary" disabled={busy}>
+                  {busy ? "Creando…" : "Crear cuenta"}
+                </button>
+              </div>
+            </form>
+            <div className="basic-table-wrap">
+              <table>
+                <caption className="basic-sr-only">
+                  Cuentas administrativas de RRHH
+                </caption>
+                <thead>
+                  <tr>
+                    <th>Correo electrónico</th>
+                    <th>Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data.admins ?? []).map((account) => (
+                    <tr key={account._id}>
+                      <td>{account.email}</td>
+                      <td>
+                        <span
+                          className={`basic-tag ${account.active ? "" : "muted"}`}
+                        >
+                          {account.active ? "Activa" : "Inactiva"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        ) : section === "telegram" ? (
           <section className="basic-operations">
             <p>
               Los envíos inciertos requieren revisión. Esta pantalla no reenvía

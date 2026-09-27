@@ -10,6 +10,7 @@ import revokeRoute from "../../api/employees/revoke-link";
 import phoneChallengeRoute from "../../api/phone/challenge";
 import phoneSubmitRoute from "../../api/phone/submit";
 import operationsRoute from "../../api/[...path]";
+import adminsRoute from "../../api/admins";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -21,6 +22,7 @@ it.each([
   ["/api/employees/revoke-link", revokeRoute],
   ["/api/phone/challenge", phoneChallengeRoute],
   ["/api/phone/submit", phoneSubmitRoute],
+  ["/api/admins", adminsRoute],
 ] as const)(
   "serves nested route %s through the authenticated proxy",
   async (path, route) => {
@@ -101,6 +103,7 @@ it("loads emitted nested functions with native Node ESM resolution", async () =>
         "api/employees/revoke-link.ts",
         "api/phone/challenge.ts",
         "api/phone/submit.ts",
+        "api/admins.ts",
       ],
       outbase: "api",
       outdir: directory,
@@ -114,6 +117,7 @@ it("loads emitted nested functions with native Node ESM resolution", async () =>
       "employees/revoke-link",
       "phone/challenge",
       "phone/submit",
+      "admins",
     ]) {
       const url = pathToFileURL(join(directory, `${path}.js`));
       execFileSync(process.execPath, [

@@ -12,22 +12,42 @@ function passwordHash(password: string) {
   const salt = randomBytes(16).toString("hex");
   return `${salt}:${scryptSync(password, salt, 64).toString("hex")}`;
 }
+function validCredentials(email: string, password: string) {
+  return (
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) &&
+    email.length <= 254 &&
+    password.length >= 14 &&
+    password.length <= 128
+  );
+}
 export const bootstrapAdmin = internalAction({
   args: { email: v.string(), password: v.string() },
   handler: async (ctx, { email, password }) => {
     email = email.trim().toLowerCase();
-    if (
-      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
-      email.length > 254 ||
-      password.length < 14 ||
-      password.length > 128
-    )
+    if (!validCredentials(email, password))
       throw new Error("Use a valid email and a password of 14–128 characters.");
     await ctx.runMutation(internal.data.provision, {
       email,
       passwordHash: passwordHash(password),
     });
     return { created: true };
+  },
+});
+export const createAdminAccount = internalAction({
+  args: { hash: v.string(), email: v.string(), password: v.string() },
+  handler: async (
+    ctx,
+    { hash, email, password },
+  ): Promise<{ ok: true } | { ok: false; reason: "invalid" | "duplicate" }> => {
+    await ctx.runQuery(internal.data.requireAdminSession, { hash });
+    email = email.trim().toLowerCase();
+    if (!validCredentials(email, password))
+      return { ok: false as const, reason: "invalid" as const };
+    return ctx.runMutation(internal.data.createAdmin, {
+      hash,
+      email,
+      passwordHash: passwordHash(password),
+    });
   },
 });
 export const login = internalAction({

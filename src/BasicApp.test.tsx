@@ -49,7 +49,7 @@ it("shows accessible login when unauthenticated and surfaces failed login", asyn
     "Credenciales incorrectas",
   );
 });
-it("shows the four approved sections and saves an employee without a phone", async () => {
+it("shows the five administrative sections and saves an employee without a phone", async () => {
   let employees: any[] = [];
   vi.stubGlobal("fetch", async (path: string, options?: RequestInit) => {
     if (path === "/api/employees") {
@@ -68,7 +68,7 @@ it("shows the four approved sections and saves an employee without a phone", asy
   });
   render(<BasicApp />);
   await screen.findByRole("button", { name: "Nuevo empleado" });
-  expect(screen.getAllByRole("link")).toHaveLength(4);
+  expect(screen.getAllByRole("link")).toHaveLength(5);
   fireEvent.click(screen.getByRole("button", { name: "Nuevo empleado" }));
   fireEvent.change(screen.getByLabelText("Nombre"), {
     target: { value: "Ana" },
@@ -76,6 +76,86 @@ it("shows the four approved sections and saves an employee without a phone", asy
   fireEvent.click(screen.getByRole("button", { name: "Guardar" }));
   await waitFor(() =>
     expect(screen.getByRole("cell", { name: "Ana" })).toBeTruthy(),
+  );
+});
+
+it("creates an equal-permission RRHH account with pending, success, and duplicate feedback", async () => {
+  let admins = [{ _id: "a1", email: "admin@example.com", active: true }];
+  let finishCreate!: (response: Response) => void;
+  const pendingCreate = new Promise<Response>((resolve) => {
+    finishCreate = resolve;
+  });
+  let createCount = 0;
+  vi.stubGlobal("fetch", async (path: string, options?: RequestInit) => {
+    if (path === "/api/admins") {
+      createCount++;
+      const body = JSON.parse(String(options?.body));
+      expect(body).toEqual({
+        email: "peer@example.com",
+        password: "another-private-password-123",
+      });
+      if (createCount === 1) {
+        const response = await pendingCreate;
+        admins = [
+          ...admins,
+          { _id: "a2", email: "peer@example.com", active: true },
+        ];
+        return response;
+      }
+      return Response.json(
+        { error: "Ya existe una cuenta de RRHH con ese correo." },
+        { status: 409 },
+      );
+    }
+    return Response.json({
+      email: "admin@example.com",
+      admins,
+      employees: [],
+      sites: [],
+      attendance: [],
+    });
+  });
+  render(<BasicApp />);
+  fireEvent.click(await screen.findByRole("link", { name: "Cuentas de RRHH" }));
+  expect(screen.getByText(/mismos permisos/)).toBeTruthy();
+  expect(screen.getByRole("cell", { name: "admin@example.com" })).toBeTruthy();
+  fireEvent.change(screen.getByLabelText("Correo de la nueva cuenta"), {
+    target: { value: "peer@example.com" },
+  });
+  fireEvent.change(screen.getByLabelText("Contraseña para la nueva cuenta"), {
+    target: { value: "another-private-password-123" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Crear cuenta" }));
+  expect(screen.getByRole("button", { name: "Creando…" })).toHaveProperty(
+    "disabled",
+    true,
+  );
+  finishCreate(Response.json({ ok: true }));
+  expect(
+    await screen.findByRole("cell", { name: "peer@example.com" }),
+  ).toBeTruthy();
+  expect(await screen.findByRole("status")).toHaveProperty(
+    "textContent",
+    "Cuenta de RRHH creada.",
+  );
+  expect(
+    (
+      screen.getByLabelText(
+        "Contraseña para la nueva cuenta",
+      ) as HTMLInputElement
+    ).value,
+  ).toBe("");
+
+  fireEvent.change(screen.getByLabelText("Correo de la nueva cuenta"), {
+    target: { value: "peer@example.com" },
+  });
+  fireEvent.change(screen.getByLabelText("Contraseña para la nueva cuenta"), {
+    target: { value: "another-private-password-123" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Crear cuenta" }));
+  expect(await screen.findByRole("alert")).toHaveProperty(
+    "textContent",
+    "Ya existe una cuenta de RRHH con ese correo.",
   );
 });
 
@@ -126,9 +206,26 @@ it("issues a one-time Telegram code without a phone and revokes the link", async
 });
 
 it("shows redacted Telegram send review without a resend control", async () => {
-  vi.stubGlobal("fetch", async (path: string) => path === "/api/telegram-operations"
-    ? Response.json({ inbound: [], outbound: [{ status: "review", attempts: 1, createdAt: Date.now(), reasonCode: "network_uncertain" }] })
-    : Response.json({ email: "admin@example.com", employees: [], sites: [], attendance: [] }));
+  vi.stubGlobal("fetch", async (path: string) =>
+    path === "/api/telegram-operations"
+      ? Response.json({
+          inbound: [],
+          outbound: [
+            {
+              status: "review",
+              attempts: 1,
+              createdAt: Date.now(),
+              reasonCode: "network_uncertain",
+            },
+          ],
+        })
+      : Response.json({
+          email: "admin@example.com",
+          employees: [],
+          sites: [],
+          attendance: [],
+        }),
+  );
   render(<BasicApp />);
   fireEvent.click(await screen.findByRole("link", { name: "Telegram" }));
   expect(await screen.findByText(/network_uncertain/)).toBeTruthy();
