@@ -11,7 +11,11 @@ type TelegramWebApp = {
   platform: string;
   ready(): void;
   expand(): void;
+  close?(): void;
+  onEvent?(name: "deactivated", callback: () => void): void;
+  offEvent?(name: "deactivated", callback: () => void): void;
   LocationManager?: {
+    isInited: boolean;
     init(callback: () => void): void;
     isLocationAvailable: boolean;
     getLocation(callback: (location: LocationData | null) => void): void;
@@ -21,6 +25,8 @@ const webApp = () =>
   (window as Window & { Telegram?: { WebApp?: TelegramWebApp } }).Telegram
     ?.WebApp;
 
+class ReopenRequired extends Error {}
+
 async function currentTelegramLocation(
   app: TelegramWebApp,
 ): Promise<LocationData> {
@@ -29,38 +35,65 @@ async function currentTelegramLocation(
     throw new Error(
       "Tu Telegram no ofrece ubicación. Actualizá la app e intentá de nuevo.",
     );
-  await new Promise<void>((resolve, reject) => {
-    const timeout = window.setTimeout(
-      () =>
-        reject(new Error("La ubicación demoró demasiado. Intentá de nuevo.")),
-      12000,
-    );
-    manager.init(() => {
-      window.clearTimeout(timeout);
-      resolve();
-    });
+  let timeout: number | undefined;
+  let interrupt!: () => void;
+  const interrupted = new Promise<never>((_, reject) => {
+    interrupt = () =>
+      reject(
+        new ReopenRequired(
+          "La solicitud de ubicación se interrumpió. Cerrá Fichar y volvé a abrirlo desde el bot.",
+        ),
+      );
   });
-  if (!manager.isLocationAvailable)
-    throw new Error(
-      "La ubicación no está disponible en este teléfono. Revisá los permisos de Telegram.",
-    );
-  const location = await new Promise<LocationData>((resolve, reject) => {
-    const timeout = window.setTimeout(
-      () =>
-        reject(new Error("La ubicación demoró demasiado. Intentá de nuevo.")),
-      12000,
-    );
-    manager.getLocation((value) => {
-      window.clearTimeout(timeout);
-      if (value) resolve(value);
-      else
-        reject(
-          new Error(
-            "No se obtuvo la ubicación. Permití el acceso en Telegram e intentá de nuevo.",
-          ),
+  const onVisibility = () => {
+    if (document.hidden) interrupt();
+  };
+  document.addEventListener("visibilitychange", onVisibility);
+  app.onEvent?.("deactivated", interrupt);
+  const waitForSdk = <T,>(
+    stage: "preparar" | "entregar",
+    request: (callback: (value: T) => void) => void,
+  ) =>
+    Promise.race([
+      new Promise<T>((resolve, reject) => {
+        timeout = window.setTimeout(
+          () =>
+            reject(
+              new ReopenRequired(
+                `Telegram demoró en ${stage} la ubicación. Cerrá Fichar y volvé a abrirlo desde el bot.`,
+              ),
+            ),
+          12000,
         );
-    });
-  });
+        request((value) => {
+          window.clearTimeout(timeout);
+          resolve(value);
+        });
+      }),
+      interrupted,
+    ]);
+  let location: LocationData;
+  try {
+    // Telegram's SDK does not call init's callback a second time once isInited.
+    if (!manager.isInited)
+      await waitForSdk<void>("preparar", (done) => manager.init(done));
+    if (!manager.isLocationAvailable)
+      throw new Error(
+        "La ubicación no está disponible en este teléfono. Revisá los permisos de Telegram.",
+      );
+    const result = await waitForSdk<LocationData | null>("entregar", (done) =>
+      manager.getLocation(done),
+    );
+    if (!result)
+      throw new Error(
+        "No se obtuvo la ubicación. Permití el acceso en Telegram e intentá de nuevo.",
+      );
+    location = result;
+  } finally {
+    window.clearTimeout(timeout);
+    document.removeEventListener("visibilitychange", onVisibility);
+    app.offEvent?.("deactivated", interrupt);
+  }
   if (
     !Number.isFinite(location.horizontal_accuracy) ||
     (location.horizontal_accuracy ?? 0) <= 0 ||
@@ -85,6 +118,10 @@ async function post(path: string, body: object) {
   if (!response.ok) {
     const error =
       "error" in data && typeof data.error === "string" ? data.error : "";
+    if (error === "Abrí Fichar desde Telegram nuevamente.")
+      throw new ReopenRequired(
+        "La sesión de Telegram venció. Abrí Fichar de nuevo desde el bot.",
+      );
     if (error.includes("Telegram")) throw new Error(error);
     if (error === "link_inactive")
       throw new Error(
@@ -112,6 +149,7 @@ export default function FicharApp() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [receipt, setReceipt] = useState("");
+  const [reopenRequired, setReopenRequired] = useState(false);
   useEffect(() => {
     if (available) {
       app!.ready();
@@ -120,7 +158,7 @@ export default function FicharApp() {
   }, [available, app]);
 
   async function register(kind: "entrada" | "salida") {
-    if (!app || busy) return;
+    if (!app || busy || reopenRequired) return;
     setBusy(true);
     setMessage("");
     setReceipt("");
@@ -146,6 +184,7 @@ export default function FicharApp() {
         `${label} registrada en ${result.siteName} · ${new Date(result.timestamp).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}`,
       );
     } catch (error) {
+      if (error instanceof ReopenRequired) setReopenRequired(true);
       setMessage(
         error instanceof Error
           ? error.message
@@ -175,11 +214,14 @@ export default function FicharApp() {
         {available ? (
           <>
             <div className="fichar-actions">
-              <button disabled={busy} onClick={() => void register("entrada")}>
+              <button
+                disabled={busy || reopenRequired}
+                onClick={() => void register("entrada")}
+              >
                 Registrar entrada
               </button>
               <button
-                disabled={busy}
+                disabled={busy || reopenRequired}
                 className="fichar-secondary"
                 onClick={() => void register("salida")}
               >
@@ -200,6 +242,11 @@ export default function FicharApp() {
               <p className="fichar-error" role="alert">
                 {message}
               </p>
+            )}
+            {reopenRequired && (
+              <button className="fichar-close" onClick={() => app?.close?.()}>
+                Cerrar Fichar
+              </button>
             )}
           </>
         ) : (

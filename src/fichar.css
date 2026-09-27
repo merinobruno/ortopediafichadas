@@ -105,6 +105,16 @@ button:disabled {
   background: white;
   color: #006c57;
 }
+.fichar-close {
+  margin-top: 12px;
+  min-height: 48px;
+  padding: 0 20px;
+  border: 1px solid #006c57;
+  border-radius: 12px;
+  background: white;
+  color: #006c57;
+  font-weight: 700;
+}
 .fichar-note,
 .fichar-success,
 .fichar-error {

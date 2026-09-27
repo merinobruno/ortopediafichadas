@@ -8,4 +8,14 @@ Chat locations, including live locations and manually selected pins, never creat
 
 Telegram `initData` authenticates the initial Telegram user data. It does **not** authenticate the later coordinates, prove a physical phone, or prevent a modified client from spoofing GPS or accuracy. Telegram platform checks are only a user-experience guard. No Wi-Fi rule is imposed. The trial therefore removes the ordinary map-pin route, but cannot provide attested presence.
 
-The existing production attendance record from the manual-pin trial remains untouched. Its open entry can prevent a new Entrada until an authorized, auditable correction is made.
+Historical attendance records are preserved. An existing open entry prevents
+a new Entrada until an authorized, auditable correction is made.
+
+The page initializes Telegram LocationManager only on first use. A later tap
+uses its existing initialized state; Telegram's SDK does not call a second
+`init` callback. If a native location request times out or the Mini App goes
+to the background while a request is pending, the page requires closing and
+reopening it from the bot. The SDK retains pending callbacks, so retrying in
+that same page could consume an older response. The server enforces the
+`initData` age limit and the page gives explicit reopen guidance if it rejects
+an expired launch.
