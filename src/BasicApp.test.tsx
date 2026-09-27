@@ -118,6 +118,12 @@ it("creates an equal-permission RRHH account with pending, success, and duplicat
   render(<BasicApp />);
   fireEvent.click(await screen.findByRole("link", { name: "Cuentas de RRHH" }));
   expect(screen.getByText(/mismos permisos/)).toBeTruthy();
+  expect(
+    screen.getByText("La contraseña debe tener entre 6 y 128 caracteres."),
+  ).toBeTruthy();
+  expect(
+    screen.getByLabelText("Contraseña para la nueva cuenta"),
+  ).toHaveProperty("minLength", 6);
   expect(screen.getByRole("cell", { name: "admin@example.com" })).toBeTruthy();
   fireEvent.change(screen.getByLabelText("Correo de la nueva cuenta"), {
     target: { value: "peer@example.com" },

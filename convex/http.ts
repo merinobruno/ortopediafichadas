@@ -181,7 +181,7 @@ const apiHandler = httpAction(async (ctx, request) => {
         : json(
             {
               error:
-                "Ingresá un correo válido y una contraseña de 14 a 128 caracteres.",
+                "Ingresá un correo válido y una contraseña de 6 a 128 caracteres.",
             },
             400,
           );

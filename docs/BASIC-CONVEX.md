@@ -149,7 +149,7 @@ administrator sessions expire after eight hours. There is no public signup.
 
 After deploying Convex, the owner uses the authenticated Convex Dashboard
 function runner for the **internal** `auth:bootstrapAdmin` action with a
-private email and unique password of 14–128 characters. It refuses if an
+private email and unique password of 6–128 characters. It refuses if an
 administrator exists, stores a salted scrypt hash, and returns only
 `{created:true}`. An authorized private CLI operator can instead invoke
 `npx convex run --prod auth:bootstrapAdmin` with privately supplied
@@ -158,7 +158,7 @@ arguments. Prefer the Dashboard to avoid shell history. Setting
 After bootstrap, every signed-in active administrator can open **Cuentas de
 RRHH** to list administrative email addresses and create another active
 administrator with the same permissions. Creation requires a unique normalized
-email and a 14–128 character password; responses and lists omit credentials
+email and a 6–128 character password; responses and lists omit credentials
 and password hashes. Employees do not receive web accounts and continue to
 check in through Telegram. There is no public signup or password reset screen.
 

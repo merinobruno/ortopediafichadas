@@ -16,7 +16,7 @@ function validCredentials(email: string, password: string) {
   return (
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) &&
     email.length <= 254 &&
-    password.length >= 14 &&
+    password.length >= 6 &&
     password.length <= 128
   );
 }
@@ -25,7 +25,7 @@ export const bootstrapAdmin = internalAction({
   handler: async (ctx, { email, password }) => {
     email = email.trim().toLowerCase();
     if (!validCredentials(email, password))
-      throw new Error("Use a valid email and a password of 14–128 characters.");
+      throw new Error("Use a valid email and a password of 6–128 characters.");
     await ctx.runMutation(internal.data.provision, {
       email,
       passwordHash: passwordHash(password),

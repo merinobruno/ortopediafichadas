@@ -467,13 +467,13 @@ export default function BasicApp() {
                     type="password"
                     autoComplete="new-password"
                     required
-                    minLength={14}
+                    minLength={6}
                     maxLength={128}
                   />
                 </label>
               </div>
               <p className="basic-footnote">
-                La contraseña debe tener entre 14 y 128 caracteres.
+                La contraseña debe tener entre 6 y 128 caracteres.
               </p>
               <div className="basic-actions">
                 <button className="basic-primary" disabled={busy}>

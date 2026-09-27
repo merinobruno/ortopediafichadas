@@ -144,3 +144,38 @@ it("rejects invalid inputs and atomically prevents normalized duplicate HR email
     admins.filter((admin) => admin.email === "peer@example.com"),
   ).toHaveLength(1);
 });
+
+it("uses a six-character minimum for first and added administrators", async () => {
+  const t = setup();
+  await expect(
+    t.action(internal.auth.bootstrapAdmin, {
+      email: "admin@example.com",
+      password: "12345",
+    }),
+  ).rejects.toThrow("6–128 characters");
+  await t.action(internal.auth.bootstrapAdmin, {
+    email: "admin@example.com",
+    password: "123456",
+  });
+  const cookie = await login(t, "admin@example.com", "123456");
+  const rejected = await api(
+    t,
+    "/api/admins",
+    "POST",
+    { email: "peer@example.com", password: "12345" },
+    cookie,
+  );
+  expect(rejected.status).toBe(400);
+  expect(await rejected.json()).toEqual({
+    error: "Ingresá un correo válido y una contraseña de 6 a 128 caracteres.",
+  });
+  const created = await api(
+    t,
+    "/api/admins",
+    "POST",
+    { email: "peer@example.com", password: "123456" },
+    cookie,
+  );
+  expect(created.status).toBe(200);
+  await login(t, "peer@example.com", "123456");
+});
